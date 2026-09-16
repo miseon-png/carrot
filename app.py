@@ -39,8 +39,24 @@ def load_data(worksheet_name):
         try:
             doc = client.open_by_key(SPREADSHEET_ID)
             sheet = doc.worksheet(worksheet_name)
-            data = sheet.get_all_records()
-            return pd.DataFrame(data)
+            # 헤더 빈셀/중복 에러 방지를 위해 get_all_values 사용
+            data = sheet.get_all_values()
+            if len(data) > 1:
+                headers = data[0]
+                headers = [h if h != "" else f"Unnamed_{i}" for i, h in enumerate(headers)]
+                df = pd.DataFrame(data[1:], columns=headers)
+                
+                # 숫자형 데이터 안전 변환
+                numeric_cols = [
+                    "입고수량", "DB환산수량", "공급가액(VAT별도)", "VAT(10%)", 
+                    "총합계금액", "개당단가", "총금액", "단가", "출고수량", "조정수량", "생산수량"
+                ]
+                for col in numeric_cols:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                return df
+            else:
+                return pd.DataFrame()
         except Exception as e:
             st.warning(f"'{worksheet_name}' 시트를 불러오지 못했습니다: {e}")
             return pd.DataFrame()
@@ -117,7 +133,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # ---------------------------------------------------------
-# TAB 1: 입고 등록 (안내 문구 제거 반영)
+# TAB 1: 입고 등록 (DB환산수량/단위 UI 제외 처리)
 # ---------------------------------------------------------
 with tab1:
     st.subheader("원부재료 입고 등록")
@@ -149,7 +165,7 @@ with tab1:
         base_unit = "g" if unit_type == "kg" else "ml"
         st.info(f"💡 시스템 내부 데이터베이스에는 **{base_qty:,d} {base_unit}** 로 환산되어 저장됩니다.")
     
-    # 내부 연산 (부가세, 총합계, 개당단가)
+    # 내부 연산
     vat_amount = int(supply_amount * 0.1)
     total_with_vat = supply_amount + vat_amount
     unit_price = int(supply_amount / input_qty) if input_qty > 0 else 0
@@ -175,16 +191,17 @@ with tab1:
     st.markdown("### 🕒 최근 입고 내역")
     df_in = load_data("입고기록")
     if not df_in.empty:
-        format_dict = {
-            "입고수량": "{:,d}",
-            "DB환산수량": "{:,d}"
-        }
+        # DB환산수량, DB환산단위 숨김 처리
+        show_cols = [c for c in df_in.columns if c not in ["DB환산수량", "DB환산단위"]]
+        df_display = df_in[show_cols].tail(8).iloc[::-1]
+        
+        format_dict = {"입고수량": "{:,d}"}
         for col_name in ["공급가액(VAT별도)", "VAT(10%)", "총합계금액", "개당단가", "총금액", "단가"]:
-            if col_name in df_in.columns:
+            if col_name in df_display.columns:
                 format_dict[col_name] = "{:,d}"
                 
         st.dataframe(
-            df_in.tail(8).iloc[::-1].style.format(format_dict),
+            df_display.style.format(format_dict),
             use_container_width=True
         )
     else:
@@ -347,7 +364,7 @@ with tab5:
         safe_qty = 1000.0
         
         in_sum = 0.0
-        if not df_in.empty and "재료명" in df_in.columns:
+        if not df_in.empty and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
             in_sum = df_in[df_in["재료명"] == item]["DB환산수량"].sum()
             
         auto_out_sum = 0.0
@@ -407,7 +424,7 @@ with tab5:
         safe_qty = 100
         
         in_sum = 0
-        if not df_in.empty and "재료명" in df_in.columns:
+        if not df_in.empty and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
             in_sum = int(df_in[df_in["재료명"] == item]["DB환산수량"].sum())
             
         auto_out_sum = 0
@@ -482,13 +499,16 @@ with tab6:
         else:
             df_filtered = df_in
             
+        show_cols = [c for c in df_filtered.columns if c not in ["DB환산수량", "DB환산단위"]]
+        df_v_display = df_filtered[show_cols]
+        
         format_dict = {"입고수량": "{:,d}"}
         for c in ["공급가액(VAT별도)", "VAT(10%)", "총합계금액", "개당단가", "총금액", "단가"]:
-            if c in df_filtered.columns:
+            if c in df_v_display.columns:
                 format_dict[c] = "{:,d}"
                 
         st.dataframe(
-            df_filtered.style.format(format_dict),
+            df_v_display.style.format(format_dict),
             use_container_width=True
         )
     else:
