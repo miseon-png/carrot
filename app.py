@@ -103,7 +103,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # ---------------------------------------------------------
-# TAB 1: 입고 등록
+# TAB 1: 입고 등록 (수량 및 금액 정수 처리 반영)
 # ---------------------------------------------------------
 with tab1:
     st.subheader("원부재료 입고 등록")
@@ -124,15 +124,17 @@ with tab1:
             
     with col2:
         unit_type = st.selectbox("입고 단위", ["kg", "g", "L", "ml", "개", "장"])
-        input_qty = st.number_input("입고 수량", min_value=0.000, step=0.001, format="%.3f")
-        unit_price = st.number_input("단가 (원 / 입력단위당)", min_value=0, step=100)
+        # 입고 수량 정수(int) 처리
+        input_qty = st.number_input("입고 수량", min_value=0, step=1, format="%d")
+        unit_price = st.number_input("단가 (원 / 입력단위당)", min_value=0, step=100, format="%d")
     
-    base_qty = input_qty
+    # 정수 수량 환산 (kg/L -> g/ml)
+    base_qty = int(input_qty)
     base_unit = unit_type
     if unit_type in ["kg", "L"]:
-        base_qty = round(input_qty * 1000, 2)
+        base_qty = int(input_qty * 1000)
         base_unit = "g" if unit_type == "kg" else "ml"
-        st.info(f"💡 시스템 내부 데이터베이스에는 **{base_qty:,.2f} {base_unit}** 로 환산되어 저장됩니다.")
+        st.info(f"💡 시스템 내부 데이터베이스에는 **{base_qty:,d} {base_unit}** 로 환산되어 저장됩니다.")
     
     total_amount = int(input_qty * unit_price)
     st.write(f"💰 총 구매 금액: **{total_amount:,.0f} 원**")
@@ -147,9 +149,9 @@ with tab1:
             if sheet:
                 sheet.append_row([
                     str(in_date), vendor_name, category, item_name, 
-                    input_qty, unit_type, base_qty, base_unit, unit_price, total_amount
+                    int(input_qty), unit_type, int(base_qty), base_unit, int(unit_price), total_amount
                 ])
-                st.success(f"✅ **[{in_date}]** 거래처 **[{vendor_name}]** / **{item_name}** {input_qty}{unit_type} 구글 시트 저장 완료!")
+                st.success(f"✅ **[{in_date}]** 거래처 **[{vendor_name}]** / **{item_name}** {input_qty:,d}{unit_type} 구글 시트 저장 완료!")
                 st.cache_resource.clear()
             else:
                 st.error("구글 시트 저장에 실패했습니다.")
@@ -161,8 +163,8 @@ with tab1:
     if not df_in.empty:
         st.dataframe(
             df_in.tail(8).iloc[::-1].style.format({
-                "입고수량": "{:,.2f}",
-                "DB환산수량": "{:,.2f}",
+                "입고수량": "{:,d}",
+                "DB환산수량": "{:,d}",
                 "단가": "{:,d}",
                 "총금액": "{:,d}"
             }),
@@ -475,7 +477,7 @@ with tab6:
             
         st.dataframe(
             df_filtered.style.format({
-                "입고수량": "{:,.2f}",
+                "입고수량": "{:,d}",
                 "단가": "{:,d}",
                 "총금액": "{:,d}"
             }),
