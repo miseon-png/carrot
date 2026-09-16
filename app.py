@@ -117,7 +117,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # ---------------------------------------------------------
-# TAB 1: 입고 등록 (총 금액 VAT 별도 입력 처리)
+# TAB 1: 입고 등록 (안내 문구 제거 반영)
 # ---------------------------------------------------------
 with tab1:
     st.subheader("원부재료 입고 등록")
@@ -149,20 +149,10 @@ with tab1:
         base_unit = "g" if unit_type == "kg" else "ml"
         st.info(f"💡 시스템 내부 데이터베이스에는 **{base_qty:,d} {base_unit}** 로 환산되어 저장됩니다.")
     
-    # 부가세(VAT 10%) 및 총 합계, 수량당 단가 계산
+    # 내부 연산 (부가세, 총합계, 개당단가)
     vat_amount = int(supply_amount * 0.1)
     total_with_vat = supply_amount + vat_amount
     unit_price = int(supply_amount / input_qty) if input_qty > 0 else 0
-    
-    st.markdown(
-        f"""
-        💰 **금액 산출 정보**  
-        - **공급가액(VAT 별도)**: `{supply_amount:,.0f} 원`  
-        - **부가세 (VAT 10%)**: `{vat_amount:,.0f} 원`  
-        - **총 합계 금액(VAT 포함)**: `{total_with_vat:,.0f} 원`  
-        - **입력 수량당 단가(VAT 별도)**: `{unit_price:,.0f} 원 / {unit_type}`
-        """
-    )
     
     if st.button("입고 저장"):
         if input_qty <= 0:
@@ -185,7 +175,6 @@ with tab1:
     st.markdown("### 🕒 최근 입고 내역")
     df_in = load_data("입고기록")
     if not df_in.empty:
-        # 출력 서식 설정
         format_dict = {
             "입고수량": "{:,d}",
             "DB환산수량": "{:,d}"
