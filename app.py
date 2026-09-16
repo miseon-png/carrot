@@ -9,7 +9,7 @@ from google.oauth2.service_account import Credentials
 # 0. 페이지 기본 설정 & 구글 시트 연동 설정
 # ---------------------------------------------------------
 st.set_page_config(page_title="당근라페 원부재료 수불부", layout="wide")
-st.title("🥕 당근라페 원부재료 수불 및 생산 관리 시스템")
+st.title("🥕 당근라페 원부재료 수불")
 
 # 인쇄/PDF 출력용 커스텀 CSS (인쇄 시 불필요한 UI 숨김)
 st.markdown("""
