@@ -16,7 +16,6 @@ SPREADSHEET_ID = "1vfDcssJtoq79GGirW4aBcpXN-0_NjhVOkJbG-I609PY"
 @st.cache_resource
 def get_gspread_client():
     try:
-        # Secrets 딕셔너리를 가져와 private_key의 \\n을 실제 줄바꿈 문자로 변환 (PEM 에러 방지)
         creds_dict = dict(st.secrets["gcp_service_account"])
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
@@ -33,6 +32,8 @@ def get_gspread_client():
         st.error(f"구글 서비스 계정 인증 실패: Secrets를 확인하세요. ({e})")
         return None
 
+# 💡 API 호출 제한(429 Error) 방지를 위한 캐싱 처리 (60초 동안 캐시 유효)
+@st.cache_data(ttl=60)
 def load_data(worksheet_name):
     client = get_gspread_client()
     if client:
@@ -40,11 +41,25 @@ def load_data(worksheet_name):
             doc = client.open_by_key(SPREADSHEET_ID)
             sheet = doc.worksheet(worksheet_name)
             data = sheet.get_all_records()
-            return pd.DataFrame(data), sheet
+            return pd.DataFrame(data)
         except Exception as e:
             st.warning(f"'{worksheet_name}' 시트를 불러오지 못했습니다: {e}")
-            return pd.DataFrame(), None
-    return pd.DataFrame(), None
+            return pd.DataFrame()
+    return pd.DataFrame()
+
+def append_data(worksheet_name, row_data):
+    client = get_gspread_client()
+    if client:
+        try:
+            doc = client.open_by_key(SPREADSHEET_ID)
+            sheet = doc.worksheet(worksheet_name)
+            sheet.append_row(row_data)
+            st.cache_data.clear() # 저장 시 캐시 초기화하여 새로고침
+            return True
+        except Exception as e:
+            st.error(f"저장 실패: {e}")
+            return False
+    return False
 
 # ---------------------------------------------------------
 # 1. 원부재료 및 거래처/단위 표준 매핑 정의
@@ -103,7 +118,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # ---------------------------------------------------------
-# TAB 1: 입고 등록 (수량 및 금액 정수 처리 반영)
+# TAB 1: 입고 등록
 # ---------------------------------------------------------
 with tab1:
     st.subheader("원부재료 입고 등록")
@@ -124,11 +139,9 @@ with tab1:
             
     with col2:
         unit_type = st.selectbox("입고 단위", ["kg", "g", "L", "ml", "개", "장"])
-        # 입고 수량 정수(int) 처리
         input_qty = st.number_input("입고 수량", min_value=0, step=1, format="%d")
         unit_price = st.number_input("단가 (원 / 입력단위당)", min_value=0, step=100, format="%d")
     
-    # 정수 수량 환산 (kg/L -> g/ml)
     base_qty = int(input_qty)
     base_unit = unit_type
     if unit_type in ["kg", "L"]:
@@ -145,21 +158,17 @@ with tab1:
         elif not vendor_name:
             st.warning("거래처명을 입력해주세요.")
         else:
-            _, sheet = load_data("입고기록")
-            if sheet:
-                sheet.append_row([
-                    str(in_date), vendor_name, category, item_name, 
-                    int(input_qty), unit_type, int(base_qty), base_unit, int(unit_price), total_amount
-                ])
+            row = [
+                str(in_date), vendor_name, category, item_name, 
+                int(input_qty), unit_type, int(base_qty), base_unit, int(unit_price), total_amount
+            ]
+            if append_data("입고기록", row):
                 st.success(f"✅ **[{in_date}]** 거래처 **[{vendor_name}]** / **{item_name}** {input_qty:,d}{unit_type} 구글 시트 저장 완료!")
-                st.cache_resource.clear()
-            else:
-                st.error("구글 시트 저장에 실패했습니다.")
 
     st.divider()
 
     st.markdown("### 🕒 최근 입고 내역")
-    df_in, _ = load_data("입고기록")
+    df_in = load_data("입고기록")
     if not df_in.empty:
         st.dataframe(
             df_in.tail(8).iloc[::-1].style.format({
@@ -221,19 +230,15 @@ with tab2:
     st.table(pd.DataFrame(preview_data))
     
     if st.button("생산 실적 저장 및 레시피 자동 출고"):
-        _, sheet = load_data("생산기록")
-        if sheet:
-            prod_name_clean = "당근라페 200g" if "200g" in product else "당근라페 400g"
-            sheet.append_row([str(prod_date), prod_name_clean, count, box_str, "생산완료"])
+        prod_name_clean = "당근라페 200g" if "200g" in product else "당근라페 400g"
+        row = [str(prod_date), prod_name_clean, count, box_str, "생산완료"]
+        if append_data("생산기록", row):
             st.success(f"🎉 **[{prod_date}]** **{product}** {count}개 생산 등록이 구글 시트에 완료되었습니다!")
-            st.cache_resource.clear()
-        else:
-            st.error("구글 시트 저장 실패")
 
     st.divider()
 
     st.markdown("### 🥣 최근 생산 내역")
-    df_prod, _ = load_data("생산기록")
+    df_prod = load_data("생산기록")
     if not df_prod.empty:
         st.dataframe(df_prod.tail(8).iloc[::-1], use_container_width=True)
     else:
@@ -260,18 +265,14 @@ with tab3:
         if out_qty <= 0:
             st.warning("출고 수량을 입력해주세요.")
         else:
-            _, sheet = load_data("수기출고")
-            if sheet:
-                sheet.append_row([str(out_date), target_item_out, out_qty, selected_out_unit, out_reason, out_note])
+            row = [str(out_date), target_item_out, out_qty, selected_out_unit, out_reason, out_note]
+            if append_data("수기출고", row):
                 st.success(f"📤 **[{out_date}]** **[{target_item_out}]** {out_qty} {selected_out_unit} 수기 출고 완료!")
-                st.cache_resource.clear()
-            else:
-                st.error("구글 시트 저장 실패")
 
     st.divider()
 
     st.markdown("### 📤 최근 수기 출고 내역")
-    df_out, _ = load_data("수기출고")
+    df_out = load_data("수기출고")
     if not df_out.empty:
         st.dataframe(
             df_out.tail(8).iloc[::-1].style.format({"출고수량": "{:,.2f}"}),
@@ -302,18 +303,14 @@ with tab4:
         if adj_qty <= 0:
             st.warning("조정 수량을 입력해주세요.")
         else:
-            _, sheet = load_data("재고조정")
-            if sheet:
-                sheet.append_row([str(adj_date), target_item_adj, adj_type, adj_qty, selected_adj_unit, adj_reason, adj_note])
+            row = [str(adj_date), target_item_adj, adj_type, adj_qty, selected_adj_unit, adj_reason, adj_note]
+            if append_data("재고조정", row):
                 st.success(f"🛠️ **[{adj_date}]** **[{target_item_adj}]** {adj_qty} {selected_adj_unit} 재고 조정 완료!")
-                st.cache_resource.clear()
-            else:
-                st.error("구글 시트 저장 실패")
 
     st.divider()
 
     st.markdown("### 🛠️ 최근 재고 조정 내역")
-    df_adj, _ = load_data("재고조정")
+    df_adj = load_data("재고조정")
     if not df_adj.empty:
         st.dataframe(
             df_adj.tail(8).iloc[::-1].style.format({"조정수량": "{:,.2f}"}),
@@ -329,10 +326,10 @@ with tab5:
     st.subheader("📋 원부재료 수불현황판")
     st.info("💡 구글 시트에 추가된 실제 입고/생산/출고/조정 기록을 집계하여 실시간 수불부를 산출합니다.")
     
-    df_in, _ = load_data("입고기록")
-    df_prod, _ = load_data("생산기록")
-    df_out, _ = load_data("수기출고")
-    df_adj, _ = load_data("재고조정")
+    df_in = load_data("입고기록")
+    df_prod = load_data("생산기록")
+    df_out = load_data("수기출고")
+    df_adj = load_data("재고조정")
     
     # 1. 원재료 수불 계산
     raw_subul = []
@@ -457,7 +454,7 @@ with tab5:
 # ---------------------------------------------------------
 with tab6:
     st.subheader("🏪 거래처별 구매/입고 현황")
-    df_in, _ = load_data("입고기록")
+    df_in = load_data("입고기록")
     
     if not df_in.empty and "거래처명" in df_in.columns:
         v_summary = df_in.groupby("거래처명")["총금액"].sum().reset_index()
