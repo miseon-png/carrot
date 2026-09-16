@@ -16,8 +16,13 @@ SPREADSHEET_ID = "1vfDcssJtoq79GGirW4aBcpXN-0_NjhVOkJbG-I609PY"
 @st.cache_resource
 def get_gspread_client():
     try:
+        # Secrets 딕셔너리를 가져와 private_key의 \\n을 실제 줄바꿈 문자로 변환 (PEM 에러 방지)
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        if "private_key" in creds_dict:
+            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            
         credentials = Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
+            creds_dict,
             scopes=[
                 "https://www.googleapis.com/auth/spreadsheets",
                 "https://www.googleapis.com/auth/drive"
@@ -140,7 +145,6 @@ with tab1:
         else:
             _, sheet = load_data("입고기록")
             if sheet:
-                # 구글 시트에 행 추가
                 sheet.append_row([
                     str(in_date), vendor_name, category, item_name, 
                     input_qty, unit_type, base_qty, base_unit, unit_price, total_amount
@@ -226,7 +230,7 @@ with tab2:
 
     st.divider()
 
-    st.markdown("### 🥣 최근 생산 내역 (실제 구글 시트 데이터)")
+    st.markdown("### 🥣 최근 생산 내역 ")
     df_prod, _ = load_data("생산기록")
     if not df_prod.empty:
         st.dataframe(df_prod.tail(8).iloc[::-1], use_container_width=True)
@@ -234,7 +238,7 @@ with tab2:
         st.info("등록된 생산 내역이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 3: 수기 출고 (구글 시트 저장 연동)
+# TAB 3: 수기 출고 (구글 시트 저장 연동 & 단위 자동 표시)
 # ---------------------------------------------------------
 with tab3:
     st.subheader("수기 출고 등록 (타 용도 사용)")
@@ -242,247 +246,6 @@ with tab3:
     
     col_out1, col_out2 = st.columns(2)
     with col_out1:
-        target_item_out = st.selectbox("출고 원부재료 선택", RAW_MATERIALS + SUB_MATERIALS, key="out_item")
-        out_reason = st.selectbox("출고 목적", ["타 제품 제조 사용", "샘플/테스트 출고", "이벤트/증정용 사용", "기타 수기 출고"])
-    with col_out2:
-        selected_out_unit = ITEM_UNITS.get(target_item_out, "단위")
-        out_qty = st.number_input(f"출고 수량 ({selected_out_unit})", min_value=0.01, step=1.0, key="out_qty")
-        st.caption(f"💡 **[{target_item_out}]**의 출고 적용 단위: **{selected_out_unit}**")
-        out_note = st.text_input("상세 비고 (선택사항)", placeholder="예: B제품 포장용 카톤박스 10개 사용", key="out_note")
-        
-    if st.button("수기 출고 저장"):
-        if out_qty <= 0:
-            st.warning("출고 수량을 입력해주세요.")
-        else:
-            _, sheet = load_data("수기출고")
-            if sheet:
-                sheet.append_row([str(out_date), target_item_out, out_qty, selected_out_unit, out_reason, out_note])
-                st.success(f"📤 **[{out_date}]** **[{target_item_out}]** {out_qty} {selected_out_unit} 수기 출고 완료!")
-                st.cache_resource.clear()
-            else:
-                st.error("구글 시트 저장 실패")
+        전체 수정 코드를 제공해 드리기 위해 **기존 코드**와 **어떤 부분의 수정(또는 기능 추가/버그 수정)이 필요한지** 말씀해 주셔야 합니다.
 
-    st.divider()
-
-    st.markdown("### 📤 최근 수기 출고 내역 (실제 구글 시트 데이터)")
-    df_out, _ = load_data("수기출고")
-    if not df_out.empty:
-        st.dataframe(
-            df_out.tail(8).iloc[::-1].style.format({"출고수량": "{:,.2f}"}),
-            use_container_width=True
-        )
-    else:
-        st.info("등록된 수기 출고 내역이 없습니다.")
-
-# ---------------------------------------------------------
-# TAB 4: 재고 조정 (구글 시트 저장 연동)
-# ---------------------------------------------------------
-with tab4:
-    st.subheader("재고 조정 등록 (손실 및 실사 반영)")
-    adj_date = st.date_input("조정 일자", datetime.date.today(), key="adj_date")
-    
-    col_adj1, col_adj2 = st.columns(2)
-    with col_adj1:
-        target_item_adj = st.selectbox("조정 원부재료 선택", RAW_MATERIALS + SUB_MATERIALS, key="adj_item")
-        adj_type = st.radio("조정 구분", ["파손/불량 손실 (-)", "실사 재고 증가 (+)", "실사 재고 감소 (-)"])
-        adj_reason = st.selectbox("조정 사유", ["보관 중 파손/불량", "유통기한 경과 소진", "재고 실사 차이 반영", "기타 수동 조정"])
-    with col_adj2:
-        selected_adj_unit = ITEM_UNITS.get(target_item_adj, "단위")
-        adj_qty = st.number_input(f"조정 수량 ({selected_adj_unit})", min_value=0.01, step=1.0, key="adj_qty")
-        st.caption(f"💡 **[{target_item_adj}]**의 조정 적용 단위: **{selected_adj_unit}**")
-        adj_note = st.text_input("상세 비고", placeholder="예: 창고 이동 중 스티커 오염 손실 발생", key="adj_note")
-        
-    if st.button("재고 조정 저장"):
-        if adj_qty <= 0:
-            st.warning("조정 수량을 입력해주세요.")
-        else:
-            _, sheet = load_data("재고조정")
-            if sheet:
-                sheet.append_row([str(adj_date), target_item_adj, adj_type, adj_qty, selected_adj_unit, adj_reason, adj_note])
-                st.success(f"🛠️ **[{adj_date}]** **[{target_item_adj}]** {adj_qty} {selected_adj_unit} 재고 조정 완료!")
-                st.cache_resource.clear()
-            else:
-                st.error("구글 시트 저장 실패")
-
-    st.divider()
-
-    st.markdown("### 🛠️ 최근 재고 조정 내역 (실제 구글 시트 데이터)")
-    df_adj, _ = load_data("재고조정")
-    if not df_adj.empty:
-        st.dataframe(
-            df_adj.tail(8).iloc[::-1].style.format({"조정수량": "{:,.2f}"}),
-            use_container_width=True
-        )
-    else:
-        st.info("등록된 재고 조정 내역이 없습니다.")
-
-# ---------------------------------------------------------
-# TAB 5: 수불부 현황판 (구글 시트 실제 자동 계산)
-# ---------------------------------------------------------
-with tab5:
-    st.subheader("📋 원부재료 수불현황판")
-    st.info("💡 구글 시트에 추가된 실제 입고/생산/출고/조정 기록을 집계하여 실시간 수불부를 산출합니다.")
-    
-    # 기초 재고 및 데이터 로드
-    df_in, _ = load_data("입고기록")
-    df_prod, _ = load_data("생산기록")
-    df_out, _ = load_data("수기출고")
-    df_adj, _ = load_data("재고조정")
-    
-    # 1. 원재료 수불 계산
-    raw_subul = []
-    for item in RAW_MATERIALS:
-        unit = ITEM_UNITS[item]
-        init_qty = 0.0 # 기월이월
-        safe_qty = 1000.0 # 안전재고
-        
-        # 입고 집계 (DB환산수량 기준)
-        in_sum = 0.0
-        if not df_in.empty and "재료명" in df_in.columns:
-            in_sum = df_in[df_in["재료명"] == item]["DB환산수량"].sum()
-            
-        # 자동 생산 출고 집계 (BOM 연산)
-        auto_out_sum = 0.0
-        if not df_prod.empty and "생산제품" in df_prod.columns:
-            prod_200_count = df_prod[df_prod["생산제품"] == "당근라페 200g"]["생산수량"].sum()
-            prod_400_count = df_prod[df_prod["생산제품"] == "당근라페 400g"]["생산수량"].sum()
-            
-            # BOM 규칙 적용
-            if item == "소금 (백설 꽃소금)":
-                auto_out_sum = (prod_200_count // 6) * 24 + (prod_400_count // 8) * 65
-            elif item == "시타 프리올리바 올리브 오일":
-                auto_out_sum = (prod_200_count // 6) * 223 + (prod_400_count // 8) * 594
-            elif item in ["홀그레인 머스타드(르네디종)", "홀그레인 머스타드(오뚜기)"]:
-                auto_out_sum = (prod_200_count // 6) * 95 + (prod_400_count // 8) * 254
-            elif item in ["라임 주스(레이지)", "설탕(백설)"]:
-                auto_out_sum = (prod_200_count // 6) * 32 + (prod_400_count // 8) * 84
-            elif item == "후추(오뚜기)":
-                auto_out_sum = (prod_200_count // 6) * 1 + (prod_400_count // 8) * 2
-                
-        # 수기 출고 집계
-        manual_out_sum = 0.0
-        if not df_out.empty and "재료명" in df_out.columns:
-            manual_out_sum = df_out[df_out["재료명"] == item]["출고수량"].sum()
-            
-        # 재고 조정 집계
-        adj_sum = 0.0
-        if not df_adj.empty and "재료명" in df_adj.columns:
-            adj_df_item = df_adj[df_adj["재료명"] == item]
-            for _, row in adj_df_item.iterrows():
-                if "증가" in str(row["조정구분"]):
-                    adj_sum += row["조정수량"]
-                else:
-                    adj_sum -= row["조정수량"]
-                    
-        curr_stock = init_qty + in_sum - auto_out_sum - manual_out_sum + adj_sum
-        
-        raw_subul.append({
-            "재료명": item, "단위": unit, "기월이월": init_qty, "금월입고": in_sum,
-            "생산출고(자동)": auto_out_sum, "수기출고": manual_out_sum, "재고조정": adj_sum,
-            "현재재고": curr_stock, "안전재고": safe_qty
-        })
-
-    st.markdown("### 🥕 원재료 수불부")
-    df_raw_calc = pd.DataFrame(raw_subul)
-    st.dataframe(
-        df_raw_calc.style.format({
-            "기월이월": "{:,.2f}", "금월입고": "{:,.2f}", "생산출고(자동)": "{:,.2f}",
-            "수기출고": "{:,.2f}", "재고조정": "{:,.2f}", "현재재고": "{:,.2f}", "안전재고": "{:,.2f}"
-        }),
-        use_container_width=True
-    )
-
-    st.divider()
-
-    # 2. 부재료 수불 계산
-    sub_subul = []
-    for item in SUB_MATERIALS:
-        unit = ITEM_UNITS[item]
-        init_qty = 0
-        safe_qty = 100
-        
-        in_sum = 0
-        if not df_in.empty and "재료명" in df_in.columns:
-            in_sum = int(df_in[df_in["재료명"] == item]["DB환산수량"].sum())
-            
-        auto_out_sum = 0
-        if not df_prod.empty and "생산제품" in df_prod.columns:
-            p200 = df_prod[df_prod["생산제품"] == "당근라페 200g"]["생산수량"].sum()
-            p400 = df_prod[df_prod["생산제품"] == "당근라페 400g"]["생산수량"].sum()
-            
-            if item in ["당근200트레이", "당근200탑실링지"]:
-                auto_out_sum = p200
-            elif item == "당근200표시사항 스티커":
-                auto_out_sum = math.ceil(p200 / 5) if p200 > 0 else 0
-            elif item == "카톤박스(특소)":
-                auto_out_sum = p200 // 6
-            elif item in ["파우치(200*250)", "당근 400 스티커"]:
-                auto_out_sum = p400
-            elif item == "카톤박스(소)":
-                auto_out_sum = p400 // 8
-
-        manual_out_sum = 0
-        if not df_out.empty and "재료명" in df_out.columns:
-            manual_out_sum = int(df_out[df_out["재료명"] == item]["출고수량"].sum())
-            
-        adj_sum = 0
-        if not df_adj.empty and "재료명" in df_adj.columns:
-            adj_df_item = df_adj[df_adj["재료명"] == item]
-            for _, row in adj_df_item.iterrows():
-                if "증가" in str(row["조정구분"]):
-                    adj_sum += int(row["조정수량"])
-                else:
-                    adj_sum -= int(row["조정수량"])
-                    
-        curr_stock = init_qty + in_sum - auto_out_sum - manual_out_sum + adj_sum
-        
-        sub_subul.append({
-            "재료명": item, "단위": unit, "기월이월": init_qty, "금월입고": in_sum,
-            "생산출고(자동)": auto_out_sum, "수기출고": manual_out_sum, "재고조정": adj_sum,
-            "현재재고": curr_stock, "안전재고": safe_qty
-        })
-
-    st.markdown("### 📦 부재료 수불부")
-    df_sub_calc = pd.DataFrame(sub_subul)
-    st.dataframe(
-        df_sub_calc.style.format({
-            "기월이월": "{:,d}", "금월입고": "{:,d}", "생산출고(자동)": "{:,d}",
-            "수기출고": "{:,d}", "재고조정": "{:,d}", "현재재고": "{:,d}", "안전재고": "{:,d}"
-        }),
-        use_container_width=True
-    )
-
-# ---------------------------------------------------------
-# TAB 6: 거래처별 입고 현황 (구글 시트 기반 집계)
-# ---------------------------------------------------------
-with tab6:
-    st.subheader("🏪 거래처별 구매/입고 현황")
-    df_in, _ = load_data("입고기록")
-    
-    if not df_in.empty and "거래처명" in df_in.columns:
-        # 거래처별 집계
-        v_summary = df_in.groupby("거래처명")["총금액"].sum().reset_index()
-        cols = st.columns(len(v_summary) if len(v_summary) > 0 else 1)
-        for idx, row in v_summary.iterrows():
-            with cols[idx % len(cols)]:
-                st.metric(f"{row['거래처명']} 누적 구매액", f"{row['총금액']:,d} 원")
-        
-        st.divider()
-        st.markdown("### 🔍 거래처별 상세 입고 내역")
-        selected_v = st.selectbox("조회할 거래처 선택", ["전체 거래처"] + list(df_in["거래처명"].unique()))
-        
-        if selected_v != "전체 거래처":
-            df_filtered = df_in[df_in["거래처명"] == selected_v]
-        else:
-            df_filtered = df_in
-            
-        st.dataframe(
-            df_filtered.style.format({
-                "입고수량": "{:,.2f}",
-                "단가": "{:,d}",
-                "총금액": "{:,d}"
-            }),
-            use_container_width=True
-        )
-    else:
-        st.info("거래처 입고 기록이 없습니다.")
+원하시는 내용(예: 특정 프로그래밍 언어, 오류 내용, 구현하려는 기능 등)을 자세히 알려주시면 완전하게 작성된 전체 수정 코드를 바로 작성해 드리겠습니다!
