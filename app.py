@@ -49,7 +49,8 @@ def load_data(worksheet_name):
                 # 숫자형 데이터 안전 변환
                 numeric_cols = [
                     "입고수량", "DB환산수량", "공급가액(VAT별도)", "VAT(10%)", 
-                    "총합계금액", "개당단가", "총금액", "단가", "출고수량", "조정수량", "생산수량"
+                    "총합계금액", "개당단가", "총금액", "단가", "출고수량", "조정수량", "생산수량",
+                    "기월이월", "안전재고"
                 ]
                 for col in numeric_cols:
                     if col in df.columns:
@@ -98,7 +99,7 @@ SUB_MATERIALS = [
     "당근 400 스티커",
     "카톤박스(소)",
     "파우치(200*160)",
-    "카톤박스(중)",
+    "카톤박스(중)"
 ]
 
 ITEM_UNITS = {
@@ -116,7 +117,8 @@ ITEM_UNITS = {
     "파우치(200*250)": "개",
     "당근 400 스티커": "개",
     "카톤박스(소)": "개",
-    "파우치(200*160)": "개"
+    "파우치(200*160)": "개",
+    "카톤박스(중)": "개"
 }
 
 VENDORS = ["케이앤에스", "은성특수산업", "제이원글로벌", "기타 / 직접입력"]
@@ -282,7 +284,7 @@ with tab3:
         target_item_out = st.selectbox("출고 원부재료 선택", RAW_MATERIALS + SUB_MATERIALS, key="out_item")
         out_reason = st.selectbox("출고 목적", ["타 제품 제조 사용", "샘플/테스트 출고", "이벤트/증정용 사용", "기타 수기 출고"])
     with col_out2:
-        selected_out_unit = ITEM_UNITS.get(target_item_out, "단위")
+        selected_out_unit = ITEM_UNITS.get(target_item_out, "개")
         out_qty = st.number_input(f"출고 수량 ({selected_out_unit})", min_value=0.01, step=1.0, key="out_qty")
         st.caption(f"💡 **[{target_item_out}]**의 출고 적용 단위: **{selected_out_unit}**")
         out_note = st.text_input("상세 비고 (선택사항)", placeholder="예: B제품 포장용 카톤박스 10개 사용", key="out_note")
@@ -320,7 +322,7 @@ with tab4:
         adj_type = st.radio("조정 구분", ["파손/불량 손실 (-)", "실사 재고 증가 (+)", "실사 재고 감소 (-)"])
         adj_reason = st.selectbox("조정 사유", ["보관 중 파손/불량", "유통기한 경과 소진", "재고 실사 차이 반영", "기타 수동 조정"])
     with col_adj2:
-        selected_adj_unit = ITEM_UNITS.get(target_item_adj, "단위")
+        selected_adj_unit = ITEM_UNITS.get(target_item_adj, "개")
         adj_qty = st.number_input(f"조정 수량 ({selected_adj_unit})", min_value=0.01, step=1.0, key="adj_qty")
         st.caption(f"💡 **[{target_item_adj}]**의 조정 적용 단위: **{selected_adj_unit}**")
         adj_note = st.text_input("상세 비고", placeholder="예: 창고 이동 중 스티커 오염 손실 발생", key="adj_note")
@@ -346,12 +348,13 @@ with tab4:
         st.info("등록된 재고 조정 내역이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 5: 수불부 현황판
+# TAB 5: 수불부 현황판 (기초재고 시트 연동 포함)
 # ---------------------------------------------------------
 with tab5:
     st.subheader("📋 원부재료 수불현황판")
-    st.info("💡 구글 시트에 추가된 실제 입고/생산/출고/조정 기록을 집계하여 실시간 수불부를 산출합니다.")
+    st.info("💡 구글 시트에 추가된 실제 입고/생산/출고/조정 기록 및 기초재고를 집계하여 실시간 수불부를 산출합니다.")
     
+    df_init = load_data("기초재고")
     df_in = load_data("입고기록")
     df_prod = load_data("생산기록")
     df_out = load_data("수기출고")
@@ -360,9 +363,18 @@ with tab5:
     # 1. 원재료 수불 계산
     raw_subul = []
     for item in RAW_MATERIALS:
-        unit = ITEM_UNITS[item]
+        unit = ITEM_UNITS.get(item, "g")
         init_qty = 0.0
         safe_qty = 1000.0
+        
+        # 기초재고 구글 시트 데이터 반영
+        if not df_init.empty and "재료명" in df_init.columns:
+            init_row = df_init[df_init["재료명"] == item]
+            if not init_row.empty:
+                if "기월이월" in init_row.columns:
+                    init_qty = float(init_row["기월이월"].values[0])
+                if "안전재고" in init_row.columns:
+                    safe_qty = float(init_row["안전재고"].values[0])
         
         in_sum = 0.0
         if not df_in.empty and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
@@ -420,9 +432,18 @@ with tab5:
     # 2. 부재료 수불 계산
     sub_subul = []
     for item in SUB_MATERIALS:
-        unit = ITEM_UNITS[item]
+        unit = ITEM_UNITS.get(item, "개")
         init_qty = 0
         safe_qty = 100
+        
+        # 기초재고 구글 시트 데이터 반영
+        if not df_init.empty and "재료명" in df_init.columns:
+            init_row = df_init[df_init["재료명"] == item]
+            if not init_row.empty:
+                if "기월이월" in init_row.columns:
+                    init_qty = int(init_row["기월이월"].values[0])
+                if "안전재고" in init_row.columns:
+                    safe_qty = int(init_row["안전재고"].values[0])
         
         in_sum = 0
         if not df_in.empty and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
