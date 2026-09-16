@@ -56,13 +56,17 @@ def load_data(worksheet_name):
             data = sheet.get_all_values()
             if len(data) > 1:
                 headers = data[0]
-                headers = [h if h != "" else f"Unnamed_{i}" for i, h in enumerate(headers)]
+                headers = [str(h).strip() if h != "" else f"Unnamed_{i}" for i, h in enumerate(headers)]
                 df = pd.DataFrame(data[1:], columns=headers)
+                
+                # 데이터 안의 콤마 제거 및 공백 제거
+                for col in df.columns:
+                    df[col] = df[col].astype(str).str.strip().str.replace(',', '')
                 
                 numeric_cols = [
                     "입고수량", "DB환산수량", "공급가액(VAT별도)", "VAT(10%)", 
                     "총합계금액", "개당단가", "총금액", "단가", "출고수량", "조정수량", "생산수량",
-                    "기월이월", "안전재고"
+                    "기월이월", "기초재고", "안전재고"
                 ]
                 for col in numeric_cols:
                     if col in df.columns:
@@ -109,7 +113,6 @@ RAW_MATERIALS = [
     "후추(오뚜기)"
 ]
 
-# 박스류(특소, 소, 중, 대)가 아래쪽에 나란히 위치하도록 정렬
 SUB_MATERIALS = [
     "당근200트레이",
     "당근200탑실링지",
@@ -370,7 +373,7 @@ with tab4:
         st.info("등록된 재고 조정 내역이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 5: 수불부 현황판
+# TAB 5: 수불부 현황판 (원재료 소수점 제거 적용)
 # ---------------------------------------------------------
 with tab5:
     st.subheader("📋 원부재료 수불현황판")
@@ -391,60 +394,34 @@ with tab5:
     df_out = load_data("수기출고")
     df_adj = load_data("재고조정")
     
-    # 1. 원재료 수불 계산
+    # 1. 원재료 수불 계산 (정수로 형변환하여 소수점 제거)
     raw_subul = []
     for item in RAW_MATERIALS:
         unit = ITEM_UNITS.get(item, "g")
-        base_qty = 0.0
-        safe_qty = 1000.0
+        init_qty = 0
+        safe_qty = 1000
         
+        # 구글 시트 '기초재고' 데이터 매핑
         if not df_init.empty and "재료명" in df_init.columns:
             init_row = df_init[df_init["재료명"] == item]
             if not init_row.empty:
+                val = 0
                 if "기월이월" in init_row.columns:
-                    base_qty = float(init_row["기월이월"].values[0])
-                if "안전재고" in init_row.columns:
-                    safe_qty = float(init_row["안전재고"].values[0])
-                    
-        prior_in = 0.0
-        if not df_in.empty and "일자_dt" in df_in.columns and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
-            prior_in = df_in[(df_in["재료명"] == item) & (df_in["일자_dt"] < start_d)]["DB환산수량"].sum()
-            
-        prior_auto_out = 0.0
-        if not df_prod.empty and "일자_dt" in df_prod.columns and "생산제품" in df_prod.columns:
-            p200_prior = df_prod[(df_prod["생산제품"] == "당근라페 200g") & (df_prod["일자_dt"] < start_d)]["생산수량"].sum()
-            p400_prior = df_prod[(df_prod["생산제품"] == "당근라페 400g") & (df_prod["일자_dt"] < start_d)]["생산수량"].sum()
-            if item == "소금 (백설 꽃소금)":
-                prior_auto_out = (p200_prior // 6) * 24 + (p400_prior // 8) * 65
-            elif item == "시타 프리올리바 올리브 오일":
-                prior_auto_out = (p200_prior // 6) * 223 + (p400_prior // 8) * 594
-            elif item in ["홀그레인 머스타드(르네디종)", "홀그레인 머스타드(오뚜기)"]:
-                prior_auto_out = (p200_prior // 6) * 95 + (p400_prior // 8) * 254
-            elif item in ["라임 주스(레이지)", "설탕(백설)"]:
-                prior_auto_out = (p200_prior // 6) * 32 + (p400_prior // 8) * 84
-            elif item == "후추(오뚜기)":
-                prior_auto_out = (p200_prior // 6) * 1 + (p400_prior // 8) * 2
+                    val = init_row["기월이월"].values[0]
+                elif "기초재고" in init_row.columns:
+                    val = init_row["기초재고"].values[0]
+                init_qty = int(round(float(val))) if pd.notnull(val) else 0
                 
-        prior_manual_out = 0.0
-        if not df_out.empty and "일자_dt" in df_out.columns and "재료명" in df_out.columns:
-            prior_manual_out = df_out[(df_out["재료명"] == item) & (df_out["일자_dt"] < start_d)]["출고수량"].sum()
-            
-        prior_adj = 0.0
-        if not df_adj.empty and "일자_dt" in df_adj.columns and "재료명" in df_adj.columns:
-            prior_adj_df = df_adj[(df_adj["재료명"] == item) & (df_adj["일자_dt"] < start_d)]
-            for _, row in prior_adj_df.iterrows():
-                if "증가" in str(row["조정구분"]):
-                    prior_adj += row["조정수량"]
-                else:
-                    prior_adj -= row["조정수량"]
-                    
-        calc_init_qty = base_qty + prior_in - prior_auto_out - prior_manual_out + prior_adj
+                if "안전재고" in init_row.columns:
+                    s_val = init_row["안전재고"].values[0]
+                    safe_qty = int(round(float(s_val))) if pd.notnull(s_val) else 1000
         
-        in_sum = 0.0
+        # 선택 기간 내 실적 집계
+        in_sum = 0
         if not df_in.empty and "일자_dt" in df_in.columns and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
-            in_sum = df_in[(df_in["재료명"] == item) & (df_in["일자_dt"] >= start_d) & (df_in["일자_dt"] <= end_d)]["DB환산수량"].sum()
+            in_sum = int(round(df_in[(df_in["재료명"] == item) & (df_in["일자_dt"] >= start_d) & (df_in["일자_dt"] <= end_d)]["DB환산수량"].sum()))
             
-        auto_out_sum = 0.0
+        auto_out_sum = 0
         if not df_prod.empty and "일자_dt" in df_prod.columns and "생산제품" in df_prod.columns:
             p200 = df_prod[(df_prod["생산제품"] == "당근라페 200g") & (df_prod["일자_dt"] >= start_d) & (df_prod["일자_dt"] <= end_d)]["생산수량"].sum()
             p400 = df_prod[(df_prod["생산제품"] == "당근라페 400g") & (df_prod["일자_dt"] >= start_d) & (df_prod["일자_dt"] <= end_d)]["생산수량"].sum()
@@ -459,23 +436,23 @@ with tab5:
             elif item == "후추(오뚜기)":
                 auto_out_sum = (p200 // 6) * 1 + (p400 // 8) * 2
                 
-        manual_out_sum = 0.0
+        manual_out_sum = 0
         if not df_out.empty and "일자_dt" in df_out.columns and "재료명" in df_out.columns:
-            manual_out_sum = df_out[(df_out["재료명"] == item) & (df_out["일자_dt"] >= start_d) & (df_out["일자_dt"] <= end_d)]["출고수량"].sum()
+            manual_out_sum = int(round(df_out[(df_out["재료명"] == item) & (df_out["일자_dt"] >= start_d) & (df_out["일자_dt"] <= end_d)]["출고수량"].sum()))
             
-        adj_sum = 0.0
+        adj_sum = 0
         if not df_adj.empty and "일자_dt" in df_adj.columns and "재료명" in df_adj.columns:
             adj_df_item = df_adj[(df_adj["재료명"] == item) & (df_adj["일자_dt"] >= start_d) & (df_adj["일자_dt"] <= end_d)]
             for _, row in adj_df_item.iterrows():
                 if "증가" in str(row["조정구분"]):
-                    adj_sum += row["조정수량"]
+                    adj_sum += int(round(row["조정수량"]))
                 else:
-                    adj_sum -= row["조정수량"]
+                    adj_sum -= int(round(row["조정수량"]))
                     
-        curr_stock = calc_init_qty + in_sum - auto_out_sum - manual_out_sum + adj_sum
+        curr_stock = init_qty + in_sum - auto_out_sum - manual_out_sum + adj_sum
         
         raw_subul.append({
-            "재료명": item, "단위": unit, "기월이월": calc_init_qty, "금월입고": in_sum,
+            "재료명": item, "단위": unit, "기월이월": init_qty, "금월입고": in_sum,
             "생산출고(자동)": auto_out_sum, "수기출고": manual_out_sum, "재고조정": adj_sum,
             "현재재고": curr_stock, "안전재고": safe_qty
         })
@@ -498,8 +475,8 @@ with tab5:
         
     st.dataframe(
         df_raw_calc.style.format({
-            "기월이월": "{:,.2f}", "금월입고": "{:,.2f}", "생산출고(자동)": "{:,.2f}",
-            "수기출고": "{:,.2f}", "재고조정": "{:,.2f}", "현재재고": "{:,.2f}", "안전재고": "{:,.2f}"
+            "기월이월": "{:,d}", "금월입고": "{:,d}", "생산출고(자동)": "{:,d}",
+            "수기출고": "{:,d}", "재고조정": "{:,d}", "현재재고": "{:,d}", "안전재고": "{:,d}"
         }),
         use_container_width=True
     )
@@ -510,51 +487,24 @@ with tab5:
     sub_subul = []
     for item in SUB_MATERIALS:
         unit = ITEM_UNITS.get(item, "개")
-        base_qty = 0
+        init_qty = 0
         safe_qty = 100
         
+        # 구글 시트 '기초재고' 데이터 매핑
         if not df_init.empty and "재료명" in df_init.columns:
             init_row = df_init[df_init["재료명"] == item]
             if not init_row.empty:
+                val = 0
                 if "기월이월" in init_row.columns:
-                    base_qty = int(init_row["기월이월"].values[0])
+                    val = init_row["기월이월"].values[0]
+                elif "기초재고" in init_row.columns:
+                    val = init_row["기초재고"].values[0]
+                init_qty = int(round(float(val))) if pd.notnull(val) else 0
+                
                 if "안전재고" in init_row.columns:
-                    safe_qty = int(init_row["안전재고"].values[0])
+                    s_val = init_row["안전재고"].values[0]
+                    safe_qty = int(round(float(s_val))) if pd.notnull(s_val) else 100
                     
-        prior_in = 0
-        if not df_in.empty and "일자_dt" in df_in.columns and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
-            prior_in = int(df_in[(df_in["재료명"] == item) & (df_in["일자_dt"] < start_d)]["DB환산수량"].sum())
-            
-        prior_auto_out = 0
-        if not df_prod.empty and "일자_dt" in df_prod.columns and "생산제품" in df_prod.columns:
-            p200_prior = df_prod[(df_prod["생산제품"] == "당근라페 200g") & (df_prod["일자_dt"] < start_d)]["생산수량"].sum()
-            p400_prior = df_prod[(df_prod["생산제품"] == "당근라페 400g") & (df_prod["일자_dt"] < start_d)]["생산수량"].sum()
-            if item in ["당근200트레이", "당근200탑실링지"]:
-                prior_auto_out = p200_prior
-            elif item == "당근200표시사항 스티커":
-                prior_auto_out = math.ceil(p200_prior / 5) if p200_prior > 0 else 0
-            elif item == "카톤박스(특소)":
-                prior_auto_out = p200_prior // 6
-            elif item in ["파우치(200*250)", "당근 400 스티커"]:
-                prior_auto_out = p400_prior
-            elif item == "카톤박스(소)":
-                prior_auto_out = p400_prior // 8
-
-        prior_manual_out = 0
-        if not df_out.empty and "일자_dt" in df_out.columns and "재료명" in df_out.columns:
-            prior_manual_out = int(df_out[(df_out["재료명"] == item) & (df_out["일자_dt"] < start_d)]["출고수량"].sum())
-            
-        prior_adj = 0
-        if not df_adj.empty and "일자_dt" in df_adj.columns and "재료명" in df_adj.columns:
-            prior_adj_df = df_adj[(df_adj["재료명"] == item) & (df_adj["일자_dt"] < start_d)]
-            for _, row in prior_adj_df.iterrows():
-                if "증가" in str(row["조정구분"]):
-                    prior_adj += int(row["조정수량"])
-                else:
-                    prior_adj -= int(row["조정수량"])
-                    
-        calc_init_qty = base_qty + prior_in - prior_auto_out - prior_manual_out + prior_adj
-
         in_sum = 0
         if not df_in.empty and "일자_dt" in df_in.columns and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
             in_sum = int(df_in[(df_in["재료명"] == item) & (df_in["일자_dt"] >= start_d) & (df_in["일자_dt"] <= end_d)]["DB환산수량"].sum())
@@ -587,10 +537,10 @@ with tab5:
                 else:
                     adj_sum -= int(row["조정수량"])
                     
-        curr_stock = calc_init_qty + in_sum - auto_out_sum - manual_out_sum + adj_sum
+        curr_stock = init_qty + in_sum - auto_out_sum - manual_out_sum + adj_sum
         
         sub_subul.append({
-            "재료명": item, "단위": unit, "기월이월": calc_init_qty, "금월입고": in_sum,
+            "재료명": item, "단위": unit, "기월이월": init_qty, "금월입고": in_sum,
             "생산출고(자동)": auto_out_sum, "수기출고": manual_out_sum, "재고조정": adj_sum,
             "현재재고": curr_stock, "안전재고": safe_qty
         })
