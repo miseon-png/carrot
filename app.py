@@ -32,7 +32,6 @@ def get_gspread_client():
         st.error(f"구글 서비스 계정 인증 실패: Secrets를 확인하세요. ({e})")
         return None
 
-# 💡 API 호출 제한(429 Error) 방지를 위한 캐싱 처리 (60초 동안 캐시 유효)
 @st.cache_data(ttl=60)
 def load_data(worksheet_name):
     client = get_gspread_client()
@@ -54,7 +53,7 @@ def append_data(worksheet_name, row_data):
             doc = client.open_by_key(SPREADSHEET_ID)
             sheet = doc.worksheet(worksheet_name)
             sheet.append_row(row_data)
-            st.cache_data.clear() # 저장 시 캐시 초기화하여 새로고침
+            st.cache_data.clear()
             return True
         except Exception as e:
             st.error(f"저장 실패: {e}")
@@ -118,7 +117,7 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # ---------------------------------------------------------
-# TAB 1: 입고 등록
+# TAB 1: 입고 등록 (총 금액 VAT 별도 입력 처리)
 # ---------------------------------------------------------
 with tab1:
     st.subheader("원부재료 입고 등록")
@@ -140,8 +139,9 @@ with tab1:
     with col2:
         unit_type = st.selectbox("입고 단위", ["kg", "g", "L", "ml", "개", "장"])
         input_qty = st.number_input("입고 수량", min_value=0, step=1, format="%d")
-        unit_price = st.number_input("단가 (원 / 입력단위당)", min_value=0, step=100, format="%d")
+        supply_amount = st.number_input("총 금액 (VAT 별도 / 원)", min_value=0, step=100, format="%d")
     
+    # 단위 정수 환산
     base_qty = int(input_qty)
     base_unit = unit_type
     if unit_type in ["kg", "L"]:
@@ -149,34 +149,53 @@ with tab1:
         base_unit = "g" if unit_type == "kg" else "ml"
         st.info(f"💡 시스템 내부 데이터베이스에는 **{base_qty:,d} {base_unit}** 로 환산되어 저장됩니다.")
     
-    total_amount = int(input_qty * unit_price)
-    st.write(f"💰 총 구매 금액: **{total_amount:,.0f} 원**")
+    # 부가세(VAT 10%) 및 총 합계, 수량당 단가 계산
+    vat_amount = int(supply_amount * 0.1)
+    total_with_vat = supply_amount + vat_amount
+    unit_price = int(supply_amount / input_qty) if input_qty > 0 else 0
+    
+    st.markdown(
+        f"""
+        💰 **금액 산출 정보**  
+        - **공급가액(VAT 별도)**: `{supply_amount:,.0f} 원`  
+        - **부가세 (VAT 10%)**: `{vat_amount:,.0f} 원`  
+        - **총 합계 금액(VAT 포함)**: `{total_with_vat:,.0f} 원`  
+        - **입력 수량당 단가(VAT 별도)**: `{unit_price:,.0f} 원 / {unit_type}`
+        """
+    )
     
     if st.button("입고 저장"):
         if input_qty <= 0:
             st.warning("입고 수량을 입력해주세요.")
+        elif supply_amount <= 0:
+            st.warning("총 금액(VAT 별도)을 입력해주세요.")
         elif not vendor_name:
             st.warning("거래처명을 입력해주세요.")
         else:
             row = [
                 str(in_date), vendor_name, category, item_name, 
-                int(input_qty), unit_type, int(base_qty), base_unit, int(unit_price), total_amount
+                int(input_qty), unit_type, int(base_qty), base_unit, 
+                int(supply_amount), int(vat_amount), int(total_with_vat), int(unit_price)
             ]
             if append_data("입고기록", row):
-                st.success(f"✅ **[{in_date}]** 거래처 **[{vendor_name}]** / **{item_name}** {input_qty:,d}{unit_type} 구글 시트 저장 완료!")
+                st.success(f"✅ **[{in_date}]** 거래처 **[{vendor_name}]** / **{item_name}** {input_qty:,d}{unit_type} (공급가액: {supply_amount:,.0f}원) 저장 완료!")
 
     st.divider()
 
     st.markdown("### 🕒 최근 입고 내역")
     df_in = load_data("입고기록")
     if not df_in.empty:
+        # 출력 서식 설정
+        format_dict = {
+            "입고수량": "{:,d}",
+            "DB환산수량": "{:,d}"
+        }
+        for col_name in ["공급가액(VAT별도)", "VAT(10%)", "총합계금액", "개당단가", "총금액", "단가"]:
+            if col_name in df_in.columns:
+                format_dict[col_name] = "{:,d}"
+                
         st.dataframe(
-            df_in.tail(8).iloc[::-1].style.format({
-                "입고수량": "{:,d}",
-                "DB환산수량": "{:,d}",
-                "단가": "{:,d}",
-                "총금액": "{:,d}"
-            }),
+            df_in.tail(8).iloc[::-1].style.format(format_dict),
             use_container_width=True
         )
     else:
@@ -456,12 +475,14 @@ with tab6:
     st.subheader("🏪 거래처별 구매/입고 현황")
     df_in = load_data("입고기록")
     
-    if not df_in.empty and "거래처명" in df_in.columns:
-        v_summary = df_in.groupby("거래처명")["총금액"].sum().reset_index()
+    amount_col = "공급가액(VAT별도)" if "공급가액(VAT별도)" in df_in.columns else ("총금액" if "총금액" in df_in.columns else "")
+    
+    if not df_in.empty and "거래처명" in df_in.columns and amount_col:
+        v_summary = df_in.groupby("거래처명")[amount_col].sum().reset_index()
         cols = st.columns(len(v_summary) if len(v_summary) > 0 else 1)
         for idx, row in v_summary.iterrows():
             with cols[idx % len(cols)]:
-                st.metric(f"{row['거래처명']} 누적 구매액", f"{row['총금액']:,d} 원")
+                st.metric(f"{row['거래처명']} 누적 공급가액", f"{row[amount_col]:,d} 원")
         
         st.divider()
         st.markdown("### 🔍 거래처별 상세 입고 내역")
@@ -472,12 +493,13 @@ with tab6:
         else:
             df_filtered = df_in
             
+        format_dict = {"입고수량": "{:,d}"}
+        for c in ["공급가액(VAT별도)", "VAT(10%)", "총합계금액", "개당단가", "총금액", "단가"]:
+            if c in df_filtered.columns:
+                format_dict[c] = "{:,d}"
+                
         st.dataframe(
-            df_filtered.style.format({
-                "입고수량": "{:,d}",
-                "단가": "{:,d}",
-                "총금액": "{:,d}"
-            }),
+            df_filtered.style.format(format_dict),
             use_container_width=True
         )
     else:
