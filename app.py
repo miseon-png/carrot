@@ -349,19 +349,20 @@ with tab4:
         st.info("등록된 재고 조정 내역이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 5: 수불부 현황판 (조회 기간 필터 적용)
+# TAB 5: 수불부 현황판 (시작일/종료일 분리 선택)
 # ---------------------------------------------------------
 with tab5:
     st.subheader("📋 원부재료 수불현황판")
     st.info("💡 지정한 조회 기간 내 발생한 입고/생산/출고/조정을 집계하여 실시간 수불부를 산출합니다.")
     
-    # 수불부 전용 조회 기간 선택
     today = datetime.date.today()
     first_day = today.replace(day=1)
-    subul_date_range = st.date_input("조회 기간 선택 (시작일 ~ 종료일)", [first_day, today], key="subul_date_range")
     
-    start_d = subul_date_range[0] if len(subul_date_range) == 2 else first_day
-    end_d = subul_date_range[1] if len(subul_date_range) == 2 else today
+    col_sd1, col_sd2 = st.columns(2)
+    with col_sd1:
+        start_d = st.date_input("조회 시작일 선택", first_day, key="subul_start_date")
+    with col_sd2:
+        end_d = st.date_input("조회 종료일 선택", today, key="subul_end_date")
     
     df_init = load_data("기초재고")
     df_in = load_data("입고기록")
@@ -576,28 +577,26 @@ with tab5:
     )
 
 # ---------------------------------------------------------
-# TAB 6: 거래처별 입고 현황
+# TAB 6: 거래처별 입고 현황 (시작일/종료일 분리 선택)
 # ---------------------------------------------------------
 with tab6:
     st.subheader("🏪 거래처별 구매/입고 현황")
     df_in = load_data("입고기록")
     
     if not df_in.empty and "거래처명" in df_in.columns:
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            today = datetime.date.today()
-            first_day = today.replace(day=1)
-            date_range = st.date_input("조회 기간 선택 (시작일 ~ 종료일)", [first_day, today], key="v_date_range")
-            
-        with col_f2:
+        today = datetime.date.today()
+        first_day = today.replace(day=1)
+        
+        col_v1, col_v2, col_v3 = st.columns(3)
+        with col_v1:
+            v_start_d = st.date_input("조회 시작일 선택", first_day, key="v_start_date")
+        with col_v2:
+            v_end_d = st.date_input("조회 종료일 선택", today, key="v_end_date")
+        with col_v3:
             vendor_list = ["전체 거래처"] + list(df_in["거래처명"].unique())
             selected_v = st.selectbox("조회할 거래처 선택", vendor_list, key="v_select")
             
-        if len(date_range) == 2:
-            start_date, end_date = date_range
-            df_filtered = df_in[(df_in["일자_dt"] >= start_date) & (df_in["일자_dt"] <= end_date)]
-        else:
-            df_filtered = df_in.copy()
+        df_filtered = df_in[(df_in["일자_dt"] >= v_start_d) & (df_in["일자_dt"] <= v_end_d)]
             
         if selected_v != "전체 거래처":
             df_filtered = df_filtered[df_filtered["거래처명"] == selected_v]
