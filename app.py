@@ -78,6 +78,10 @@ def append_data(worksheet_name, row_data):
             return False
     return False
 
+# CSV 인코딩 (한글 깨짐 방지 utf-8-sig)
+def to_csv(df):
+    return df.to_csv(index=False).encode('utf-8-sig')
+
 # ---------------------------------------------------------
 # 1. 원부재료 및 거래처/단위 표준 매핑 정의
 # ---------------------------------------------------------
@@ -349,7 +353,7 @@ with tab4:
         st.info("등록된 재고 조정 내역이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 5: 수불부 현황판 (시작일/종료일 분리 선택)
+# TAB 5: 수불부 현황판 (개별 인쇄 및 엑셀 다운로드)
 # ---------------------------------------------------------
 with tab5:
     st.subheader("📋 원부재료 수불현황판")
@@ -377,7 +381,6 @@ with tab5:
         base_qty = 0.0
         safe_qty = 1000.0
         
-        # 1-1. 기초재고 시트 값
         if not df_init.empty and "재료명" in df_init.columns:
             init_row = df_init[df_init["재료명"] == item]
             if not init_row.empty:
@@ -386,7 +389,6 @@ with tab5:
                 if "안전재고" in init_row.columns:
                     safe_qty = float(init_row["안전재고"].values[0])
                     
-        # 1-2. 시작일 이전 누적 실적 (기월이월 계산)
         prior_in = 0.0
         if not df_in.empty and "일자_dt" in df_in.columns and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
             prior_in = df_in[(df_in["재료명"] == item) & (df_in["일자_dt"] < start_d)]["DB환산수량"].sum()
@@ -421,7 +423,6 @@ with tab5:
                     
         calc_init_qty = base_qty + prior_in - prior_auto_out - prior_manual_out + prior_adj
         
-        # 1-3. 기간 내 실적 (시작일 <= 일자 <= 종료일)
         in_sum = 0.0
         if not df_in.empty and "일자_dt" in df_in.columns and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
             in_sum = df_in[(df_in["재료명"] == item) & (df_in["일자_dt"] >= start_d) & (df_in["일자_dt"] <= end_d)]["DB환산수량"].sum()
@@ -462,8 +463,30 @@ with tab5:
             "현재재고": curr_stock, "안전재고": safe_qty
         })
 
-    st.markdown("### 🥕 원재료 수불부")
-    df_raw_calc = pd.DataFrame(raw_subul)
+    # 원재료 헤더 및 버튼 영역
+    col_raw1, col_raw2, col_raw3 = st.columns([2, 1, 1])
+    with col_raw1:
+        st.markdown("### 🥕 원재료 수불부")
+    with col_raw2:
+        st.components.v1.html(
+            """
+            <button onclick="window.print()" style="
+                background-color: #2196F3; color: white; border: none;
+                padding: 8px 12px; font-size: 13px; border-radius: 4px;
+                cursor: pointer; width: 100%; font-weight: bold;
+            ">🖨️ 원재료 수불부 인쇄/PDF</button>
+            """,
+            height=40
+        )
+    with col_raw3:
+        df_raw_calc = pd.DataFrame(raw_subul)
+        st.download_button(
+            label="📥 원재료 엑셀(CSV) 다운",
+            data=to_csv(df_raw_calc),
+            file_name=f"원재료_수불부_{start_d}_{end_d}.csv",
+            mime="text/csv"
+        )
+        
     st.dataframe(
         df_raw_calc.style.format({
             "기월이월": "{:,.2f}", "금월입고": "{:,.2f}", "생산출고(자동)": "{:,.2f}",
@@ -481,7 +504,6 @@ with tab5:
         base_qty = 0
         safe_qty = 100
         
-        # 2-1. 기초재고 시트 값
         if not df_init.empty and "재료명" in df_init.columns:
             init_row = df_init[df_init["재료명"] == item]
             if not init_row.empty:
@@ -490,7 +512,6 @@ with tab5:
                 if "안전재고" in init_row.columns:
                     safe_qty = int(init_row["안전재고"].values[0])
                     
-        # 2-2. 시작일 이전 누적 실적 (기월이월 계산)
         prior_in = 0
         if not df_in.empty and "일자_dt" in df_in.columns and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
             prior_in = int(df_in[(df_in["재료명"] == item) & (df_in["일자_dt"] < start_d)]["DB환산수량"].sum())
@@ -525,7 +546,6 @@ with tab5:
                     
         calc_init_qty = base_qty + prior_in - prior_auto_out - prior_manual_out + prior_adj
 
-        # 2-3. 기간 내 실적 (시작일 <= 일자 <= 종료일)
         in_sum = 0
         if not df_in.empty and "일자_dt" in df_in.columns and "재료명" in df_in.columns and "DB환산수량" in df_in.columns:
             in_sum = int(df_in[(df_in["재료명"] == item) & (df_in["일자_dt"] >= start_d) & (df_in["일자_dt"] <= end_d)]["DB환산수량"].sum())
@@ -566,8 +586,30 @@ with tab5:
             "현재재고": curr_stock, "안전재고": safe_qty
         })
 
-    st.markdown("### 📦 부재료 수불부")
-    df_sub_calc = pd.DataFrame(sub_subul)
+    # 부재료 헤더 및 버튼 영역
+    col_sub1, col_sub2, col_sub3 = st.columns([2, 1, 1])
+    with col_sub1:
+        st.markdown("### 📦 부재료 수불부")
+    with col_sub2:
+        st.components.v1.html(
+            """
+            <button onclick="window.print()" style="
+                background-color: #2196F3; color: white; border: none;
+                padding: 8px 12px; font-size: 13px; border-radius: 4px;
+                cursor: pointer; width: 100%; font-weight: bold;
+            ">🖨️ 부재료 수불부 인쇄/PDF</button>
+            """,
+            height=40
+        )
+    with col_sub3:
+        df_sub_calc = pd.DataFrame(sub_subul)
+        st.download_button(
+            label="📥 부재료 엑셀(CSV) 다운",
+            data=to_csv(df_sub_calc),
+            file_name=f"부재료_수불부_{start_d}_{end_d}.csv",
+            mime="text/csv"
+        )
+        
     st.dataframe(
         df_sub_calc.style.format({
             "기월이월": "{:,d}", "금월입고": "{:,d}", "생산출고(자동)": "{:,d}",
@@ -577,7 +619,7 @@ with tab5:
     )
 
 # ---------------------------------------------------------
-# TAB 6: 거래처별 입고 현황 (시작일/종료일 분리 선택)
+# TAB 6: 거래처별 입고 현황
 # ---------------------------------------------------------
 with tab6:
     st.subheader("🏪 거래처별 구매/입고 현황")
