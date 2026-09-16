@@ -11,6 +11,20 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="당근라페 원부재료 수불부", layout="wide")
 st.title("🥕 당근라페 원부재료 수불 및 생산 관리 시스템")
 
+# 인쇄/PDF 출력용 커스텀 CSS (인쇄 시 불필요한 UI 숨김)
+st.markdown("""
+    <style>
+    @media print {
+        header, footer, [data-testid="stSidebar"], .stButton, div[data-testid="stToolbar"] {
+            display: none !important;
+        }
+        .main .block-container {
+            padding: 0 !important;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 SPREADSHEET_ID = "1vfDcssJtoq79GGirW4aBcpXN-0_NjhVOkJbG-I609PY"
 
 @st.cache_resource
@@ -353,7 +367,7 @@ with tab4:
         st.info("등록된 재고 조정 내역이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 5: 수불부 현황판 (개별 인쇄 및 엑셀 다운로드)
+# TAB 5: 수불부 현황판 (버튼 높이/디자인 완벽 통일)
 # ---------------------------------------------------------
 with tab5:
     st.subheader("📋 원부재료 수불현황판")
@@ -463,28 +477,21 @@ with tab5:
             "현재재고": curr_stock, "안전재고": safe_qty
         })
 
-    # 원재료 헤더 및 버튼 영역
+    # 원재료 수불부 영역 (크기 통일된 버튼 배치)
     col_raw1, col_raw2, col_raw3 = st.columns([2, 1, 1])
     with col_raw1:
         st.markdown("### 🥕 원재료 수불부")
     with col_raw2:
-        st.components.v1.html(
-            """
-            <button onclick="window.print()" style="
-                background-color: #2196F3; color: white; border: none;
-                padding: 8px 12px; font-size: 13px; border-radius: 4px;
-                cursor: pointer; width: 100%; font-weight: bold;
-            ">🖨️ 원재료 수불부 인쇄/PDF</button>
-            """,
-            height=40
-        )
+        if st.button("🖨️ 원재료 수불부 인쇄/PDF", key="print_raw", use_container_width=True):
+            st.components.v1.html("<script>window.print();</script>", height=0)
     with col_raw3:
         df_raw_calc = pd.DataFrame(raw_subul)
         st.download_button(
             label="📥 원재료 엑셀(CSV) 다운",
             data=to_csv(df_raw_calc),
             file_name=f"원재료_수불부_{start_d}_{end_d}.csv",
-            mime="text/csv"
+            mime="text/csv",
+            use_container_width=True
         )
         
     st.dataframe(
@@ -586,28 +593,21 @@ with tab5:
             "현재재고": curr_stock, "안전재고": safe_qty
         })
 
-    # 부재료 헤더 및 버튼 영역
+    # 부재료 수불부 영역 (크기 통일된 버튼 배치)
     col_sub1, col_sub2, col_sub3 = st.columns([2, 1, 1])
     with col_sub1:
         st.markdown("### 📦 부재료 수불부")
     with col_sub2:
-        st.components.v1.html(
-            """
-            <button onclick="window.print()" style="
-                background-color: #2196F3; color: white; border: none;
-                padding: 8px 12px; font-size: 13px; border-radius: 4px;
-                cursor: pointer; width: 100%; font-weight: bold;
-            ">🖨️ 부재료 수불부 인쇄/PDF</button>
-            """,
-            height=40
-        )
+        if st.button("🖨️ 부재료 수불부 인쇄/PDF", key="print_sub", use_container_width=True):
+            st.components.v1.html("<script>window.print();</script>", height=0)
     with col_sub3:
         df_sub_calc = pd.DataFrame(sub_subul)
         st.download_button(
             label="📥 부재료 엑셀(CSV) 다운",
             data=to_csv(df_sub_calc),
             file_name=f"부재료_수불부_{start_d}_{end_d}.csv",
-            mime="text/csv"
+            mime="text/csv",
+            use_container_width=True
         )
         
     st.dataframe(
