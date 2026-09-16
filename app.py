@@ -230,7 +230,7 @@ with tab2:
 
     st.divider()
 
-    st.markdown("### 🥣 최근 생산 내역 ")
+    st.markdown("### 🥣 최근 생산 내역 (실제 구글 시트 데이터)")
     df_prod, _ = load_data("생산기록")
     if not df_prod.empty:
         st.dataframe(df_prod.tail(8).iloc[::-1], use_container_width=True)
