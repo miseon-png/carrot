@@ -156,7 +156,7 @@ with tab1:
 
     st.divider()
 
-    st.markdown("### 🕒 최근 입고 내역 (실제 구글 시트 데이터)")
+    st.markdown("### 🕒 최근 입고 내역")
     df_in, _ = load_data("입고기록")
     if not df_in.empty:
         st.dataframe(
@@ -230,7 +230,7 @@ with tab2:
 
     st.divider()
 
-    st.markdown("### 🥣 최근 생산 내역 (실제 구글 시트 데이터)")
+    st.markdown("### 🥣 최근 생산 내역")
     df_prod, _ = load_data("생산기록")
     if not df_prod.empty:
         st.dataframe(df_prod.tail(8).iloc[::-1], use_container_width=True)
@@ -268,7 +268,7 @@ with tab3:
 
     st.divider()
 
-    st.markdown("### 📤 최근 수기 출고 내역 (실제 구글 시트 데이터)")
+    st.markdown("### 📤 최근 수기 출고 내역")
     df_out, _ = load_data("수기출고")
     if not df_out.empty:
         st.dataframe(
@@ -310,7 +310,7 @@ with tab4:
 
     st.divider()
 
-    st.markdown("### 🛠️ 최근 재고 조정 내역 (실제 구글 시트 데이터)")
+    st.markdown("### 🛠️ 최근 재고 조정 내역")
     df_adj, _ = load_data("재고조정")
     if not df_adj.empty:
         st.dataframe(
