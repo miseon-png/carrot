@@ -309,7 +309,7 @@ with tab3:
     col_out1, col_out2 = st.columns(2)
     with col_out1:
         target_item_out = st.selectbox("출고 원부재료 선택", RAW_MATERIALS + SUB_MATERIALS, key="out_item")
-        out_reason = st.selectbox("출고 목적", ["타 제품 제조 사용", "샘플/테스트 출고", "이벤트/증정용 사용", "기타 수기 출고"])
+        out_reason = st.selectbox("출고 목적", ["제품 제조 사용", "샘플/테스트 출고", "이벤트/증정용 사용", "기타 수기 출고"])
     with col_out2:
         selected_out_unit = ITEM_UNITS.get(target_item_out, "개")
         out_qty = st.number_input(f"출고 수량 ({selected_out_unit})", min_value=0.01, step=1.0, key="out_qty")
