@@ -178,7 +178,6 @@ ITEM_UNITS = {
     "카톤박스(대)": "개"
 }
 
-# 1통/1개당 세부 용량 환산 스펙 정의
 ITEM_PACKAGE_SIZES = {
     "시타 프리올리바 올리브 오일": {"size": 5000, "unit": "ml"},   # 1통 = 5L = 5,000ml
     "홀그레인 머스타드(르네디종)": {"size": 5000, "unit": "g"}       # 1통 = 5kg = 5,000g
@@ -223,7 +222,6 @@ with tab1:
         input_qty = st.number_input("입고 수량", min_value=0, step=1, format="%d")
         supply_amount = st.number_input("총 금액 (VAT 별도 / 원)", min_value=0, step=100, format="%d")
     
-    # DB 환산 로직 강화 (1통당 규격 자동 반영)
     base_qty = int(input_qty)
     base_unit = ITEM_UNITS.get(item_name, unit_type)
     
@@ -418,21 +416,25 @@ with tab4:
         st.info("등록된 재고 조정 내역이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 5: 수불부 현황판
+# TAB 5: 수불부 현황판 (옵션 및 필터링 기능 강화)
 # ---------------------------------------------------------
 with tab5:
     st.subheader("📋 원부재료 일자별 수불현황판")
-    st.info("💡 선택한 기간 동안 매일의 수불 흐름(전일이월 ➔ 당일입고 ➔ 생산출고 ➔ 수기출고 ➔ 재고조정 ➔ 당일재고)이 일자별로 표시됩니다.")
+    st.info("💡 선택한 기간 동안 매일의 수불 흐름이 일자별로 표시됩니다.")
     
     today = datetime.date.today()
     first_day = today.replace(day=1)
     
-    col_sd1, col_sd2 = st.columns(2)
+    col_sd1, col_sd2, col_sd3 = st.columns([1, 1, 1])
     with col_sd1:
         start_d = st.date_input("조회 시작일 선택", first_day, key="subul_start_date")
     with col_sd2:
         end_d = st.date_input("조회 종료일 선택", today, key="subul_end_date")
-    
+    with col_sd3:
+        st.write("") # 정렬 맞춤용 빈 공간
+        st.write("")
+        hide_no_change = st.checkbox("💡 입출고 및 변동이 없는 날짜 숨기기", value=False, key="hide_no_change")
+
     df_init = load_data("기초재고")
     df_in = load_data("입고기록")
     df_prod = load_data("생산기록")
@@ -452,7 +454,6 @@ with tab5:
         unit = ITEM_UNITS.get(item, "g")
         clean_item = item.strip()
         
-        # 1-1. 기초재고
         base_init = 0.0
         safe_qty = 1000
         if not df_init.empty and init_item_col:
@@ -464,7 +465,6 @@ with tab5:
                     s_val = init_row["안전재고"].values[0]
                     safe_qty = int(round(float(s_val))) if pd.notnull(s_val) else 1000
 
-        # 1-2. 시작일 직전일까지 누적 계산
         prior_in = 0.0
         if not df_in.empty and "일자_dt" in df_in.columns and in_item_col:
             p_in_df = df_in[(df_in[in_item_col].astype(str).str.strip() == clean_item) & (df_in["일자_dt"] < start_d)]
@@ -490,7 +490,6 @@ with tab5:
 
         current_running_stock = int(round(base_init + prior_in - prior_auto_out - prior_manual_out + prior_adj))
 
-        # 1-3. 일자별 수불 루프
         for curr_d in date_list:
             prev_carryover = current_running_stock
             
@@ -526,22 +525,41 @@ with tab5:
                 "재고조정": d_adj, "당일재고": day_end_stock, "안전재고": safe_qty
             })
 
-    col_raw1, col_raw2, col_raw3 = st.columns([2, 1, 1])
+    # 원재료 데이터프레임 가공 및 정렬/필터링
+    df_raw_calc = pd.DataFrame(raw_subul)
+    
+    col_raw1, col_raw2, col_raw3, col_raw4 = st.columns([2, 2, 1, 1])
     with col_raw1:
         st.markdown("### 🥕 원재료 일자별 수불부")
     with col_raw2:
-        if st.button("🖨️ 원재료 수불부 인쇄/PDF", key="print_raw", use_container_width=True):
-            st.components.v1.html("<script>window.print();</script>", height=0)
+        selected_raw_item = st.selectbox("조회할 원재료 선택", ["전체 원재료 보기"] + RAW_MATERIALS, key="select_raw_item")
     with col_raw3:
-        df_raw_calc = pd.DataFrame(raw_subul)
+        if st.button("🖨️ 원재료 인쇄/PDF", key="print_raw", use_container_width=True):
+            st.components.v1.html("<script>window.print();</script>", height=0)
+    with col_raw4:
         st.download_button(
-            label="📥 원재료 엑셀(CSV) 다운",
+            label="📥 원재료 CSV",
             data=to_csv(df_raw_calc),
             file_name=f"원재료_일자별수불부_{start_d}_{end_d}.csv",
             mime="text/csv",
             use_container_width=True
         )
-        
+
+    # 원재료 필터링 적용
+    if selected_raw_item != "전체 원재료 보기":
+        df_raw_calc = df_raw_calc[df_raw_calc["재료명"] == selected_raw_item]
+    
+    if hide_no_change:
+        df_raw_calc = df_raw_calc[
+            (df_raw_calc["금일입고"] != 0) | 
+            (df_raw_calc["생산출고(자동)"] != 0) | 
+            (df_raw_calc["수기출고"] != 0) | 
+            (df_raw_calc["재고조정"] != 0)
+        ]
+
+    # 날짜 최우선 정렬 (일자 -> 재료명)
+    df_raw_calc = df_raw_calc.sort_values(by=["일자", "재료명"]).reset_index(drop=True)
+
     st.dataframe(
         df_raw_calc.style.format({
             "전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}",
@@ -629,22 +647,41 @@ with tab5:
                 "재고조정": d_adj, "당일재고": day_end_stock, "안전재고": safe_qty
             })
 
-    col_sub1, col_sub2, col_sub3 = st.columns([2, 1, 1])
+    # 부재료 데이터프레임 가공 및 정렬/필터링
+    df_sub_calc = pd.DataFrame(sub_subul)
+
+    col_sub1, col_sub2, col_sub3, col_sub4 = st.columns([2, 2, 1, 1])
     with col_sub1:
         st.markdown("### 📦 부재료 일자별 수불부")
     with col_sub2:
-        if st.button("🖨️ 부재료 수불부 인쇄/PDF", key="print_sub", use_container_width=True):
-            st.components.v1.html("<script>window.print();</script>", height=0)
+        selected_sub_item = st.selectbox("조회할 부재료 선택", ["전체 부재료 보기"] + SUB_MATERIALS, key="select_sub_item")
     with col_sub3:
-        df_sub_calc = pd.DataFrame(sub_subul)
+        if st.button("🖨️ 부재료 인쇄/PDF", key="print_sub", use_container_width=True):
+            st.components.v1.html("<script>window.print();</script>", height=0)
+    with col_sub4:
         st.download_button(
-            label="📥 부재료 엑셀(CSV) 다운",
+            label="📥 부재료 CSV",
             data=to_csv(df_sub_calc),
             file_name=f"부재료_일자별수불부_{start_d}_{end_d}.csv",
             mime="text/csv",
             use_container_width=True
         )
+
+    # 부재료 필터링 적용
+    if selected_sub_item != "전체 부재료 보기":
+        df_sub_calc = df_sub_calc[df_sub_calc["재료명"] == selected_sub_item]
         
+    if hide_no_change:
+        df_sub_calc = df_sub_calc[
+            (df_sub_calc["금일입고"] != 0) | 
+            (df_sub_calc["생산출고(자동)"] != 0) | 
+            (df_sub_calc["수기출고"] != 0) | 
+            (df_sub_calc["재고조정"] != 0)
+        ]
+
+    # 날짜 최우선 정렬 (일자 -> 재료명)
+    df_sub_calc = df_sub_calc.sort_values(by=["일자", "재료명"]).reset_index(drop=True)
+
     st.dataframe(
         df_sub_calc.style.format({
             "전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}",
