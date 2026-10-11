@@ -300,8 +300,8 @@ with tab2:
                 "당근200트레이", "당근200탑실링지", "당근200표시사항 스티커", "카톤박스(특소)"
             ],
             "차감 수량": [
-                f"{24.8 * batches} g", f"{223 * batches} ml", f"{95 * batches} g",
-                f"{95 * batches} g", f"{32 * batches} ml", f"{32 * batches} g", f"{1 * batches} g",
+                f"{24.8 * batches} g", f"{228.1 * batches} ml", f"{97.7 * batches} g",
+                f"{97.7 * batches} g", f"{32.3 * batches} ml", f"{32.6 * batches} g", f"{0.2 * batches} g",
                 f"{count} 개", f"{count} 개", f"{math.ceil(count / 5)} 장", f"{count // 6} 개"
             ]
         }
@@ -314,8 +314,8 @@ with tab2:
                 "파우치(200*250)", "당근 400 스티커", "카톤박스(중)" # <--- 카톤박스(중)으로 수정
             ],
             "차감 수량": [
-                f"{65 * batches} g", f"{594 * batches} ml", f"{254 * batches} g",
-                f"{254 * batches} g", f"{84 * batches} ml", f"{84 * batches} g", f"{2 * batches} g",
+                f"{66.1 * batches} g", f"{608.2 * batches} ml", f"{260.7 * batches} g",
+                f"{260.7 * batches} g", f"{86.2 * batches} ml", f"{86.9 * batches} g", f"{0.7 * batches} g",
                 f"{count} 개", f"{count} 개", f"{count // 8} 개"
             ]
         }
