@@ -180,7 +180,7 @@ ITEM_UNITS = {
 
 ITEM_PACKAGE_SIZES = {
     "시타 프리올리바 올리브 오일": {"size": 5000, "unit": "ml"},   # 1통 = 5L = 5,000ml
-    "홀그레인 머스타드(르네디종)": {"size": 5000, "unit": "g"}       # 1통 = 5kg = 5,000g
+    "홀그레인 머스타드(르네디종)": {"size": 5000, "unit": "g"}        # 1통 = 5kg = 5,000g
 }
 
 VENDORS = ["케이앤에스", "은성특수산업", "제이원글로벌", "삼보판지", "기타 / 직접입력"]
@@ -311,7 +311,7 @@ with tab2:
             "원부재료명": [
                 "소금 (백설 꽃소금)", "시타 프리올리바 올리브 오일", "홀그레인 머스타드(르네디종)", 
                 "홀그레인 머스타드(오뚜기)", "라임 주스(레이지)", "설탕(백설)", "후추(오뚜기)",
-                "파우치(200*250)", "당근 400 스티커", "카톤박스(소)"
+                "파우치(200*250)", "당근 400 스티커", "카톤박스(중)" # <--- 카톤박스(중)으로 수정
             ],
             "차감 수량": [
                 f"{65 * batches} g", f"{594 * batches} ml", f"{254 * batches} g",
@@ -319,7 +319,7 @@ with tab2:
                 f"{count} 개", f"{count} 개", f"{count // 8} 개"
             ]
         }
-        box_str = f"{count // 8} 박스(소)"
+        box_str = f"{count // 8} 박스(중)" # <--- 박스(중)으로 수정
     st.table(pd.DataFrame(preview_data))
     
     if st.button("생산 실적 저장 및 레시피 자동 출고"):
@@ -600,7 +600,7 @@ with tab5:
             elif clean_item == "당근200표시사항 스티커": prior_auto_out = math.ceil(p200_p / 5) if p200_p > 0 else 0
             elif clean_item == "카톤박스(특소)": prior_auto_out = p200_p // 6
             elif clean_item in ["파우치(200*250)", "당근 400 스티커"]: prior_auto_out = p400_p
-            elif clean_item == "카톤박스(소)": prior_auto_out = p400_p // 8
+            elif clean_item == "카톤박스(중)": prior_auto_out = p400_p // 8 # <--- 카톤박스(중)으로 수정
 
         prior_manual_out = int(round(df_out[(df_out[out_item_col].astype(str).str.strip() == clean_item) & (df_out["일자_dt"] < start_d)]["출고수량"].sum())) if not df_out.empty and "일자_dt" in df_out.columns and out_item_col else 0
         
@@ -628,7 +628,7 @@ with tab5:
                 elif clean_item == "당근200표시사항 스티커": d_auto_out = math.ceil(p200 / 5) if p200 > 0 else 0
                 elif clean_item == "카톤박스(특소)": d_auto_out = p200 // 6
                 elif clean_item in ["파우치(200*250)", "당근 400 스티커"]: d_auto_out = p400
-                elif clean_item == "카톤박스(소)": d_auto_out = p400 // 8
+                elif clean_item == "카톤박스(중)": d_auto_out = p400 // 8 # <--- 카톤박스(중)으로 수정
 
             d_manual_out = int(round(df_out[(df_out[out_item_col].astype(str).str.strip() == clean_item) & (df_out["일자_dt"] == curr_d)]["출고수량"].sum())) if not df_out.empty and "일자_dt" in df_out.columns and out_item_col else 0
             
