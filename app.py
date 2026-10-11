@@ -300,7 +300,7 @@ with tab2:
                 "당근200트레이", "당근200탑실링지", "당근200표시사항 스티커", "카톤박스(특소)"
             ],
             "차감 수량": [
-                f"{24 * batches} g", f"{223 * batches} ml", f"{95 * batches} g",
+                f"{24.8 * batches} g", f"{223 * batches} ml", f"{95 * batches} g",
                 f"{95 * batches} g", f"{32 * batches} ml", f"{32 * batches} g", f"{1 * batches} g",
                 f"{count} 개", f"{count} 개", f"{math.ceil(count / 5)} 장", f"{count // 6} 개"
             ]
