@@ -77,9 +77,11 @@ def load_data(worksheet_name):
                     df["일자_dt"] = pd.to_datetime(df[date_col], errors="coerce").dt.date
                 return df
             else:
-                return pd.DataFrame()
+                return pd.DataFrame(columns=data[0] if len(data) > 0 else [])
         except Exception as e:
-            st.warning(f"'{worksheet_name}' 시트를 불러오지 못했습니다: {e}")
+            # 기초정보 시트가 없을 때의 경고 방지용
+            if worksheet_name != "기초정보":
+                st.warning(f"'{worksheet_name}' 시트를 불러오지 못했습니다: {e}")
             return pd.DataFrame()
     return pd.DataFrame()
 
@@ -128,8 +130,30 @@ def get_converted_in_qty(df_in_filtered):
                 total_qty += in_qty
     return total_qty
 
+def load_master_data():
+    """기초정보(거래처, 부재료) 동적 데이터 로드"""
+    df = load_data("기초정보")
+    added_subs = []
+    added_vendors = []
+    added_units = {}
+    
+    if not df.empty and "구분" in df.columns and "이름" in df.columns:
+        for _, row in df.iterrows():
+            cat = str(row.get("구분", "")).strip()
+            name = str(row.get("이름", "")).strip()
+            unit = str(row.get("단위", "")).strip() if "단위" in df.columns else ""
+            
+            if cat == "부재료" and name:
+                added_subs.append(name)
+                if unit:
+                    added_units[name] = unit
+            elif cat == "거래처" and name:
+                added_vendors.append(name)
+                
+    return added_subs, added_vendors, added_units
+
 # ---------------------------------------------------------
-# 1. 원부재료 및 거래처/단위 표준 매핑 정의
+# 1. 원부재료 및 거래처/단위 표준 매핑 정의 (기본값 + 동적 병합)
 # ---------------------------------------------------------
 RAW_MATERIALS = [
     "소금 (백설 꽃소금)",
@@ -141,7 +165,7 @@ RAW_MATERIALS = [
     "후추(오뚜기)"
 ]
 
-SUB_MATERIALS = [
+BASE_SUB_MATERIALS = [
     "당근200트레이",
     "당근200탑실링지",
     "당근200표시사항 스티커",
@@ -156,45 +180,41 @@ SUB_MATERIALS = [
     "카톤박스(대)"
 ]
 
-ITEM_UNITS = {
-    "소금 (백설 꽃소금)": "g",
-    "시타 프리올리바 올리브 오일": "ml",
-    "홀그레인 머스타드(르네디종)": "g",
-    "홀그레인 머스타드(오뚜기)": "g",
-    "라임 주스(레이지)": "ml",
-    "설탕(백설)": "g",
-    "후추(오뚜기)": "g",
-    "당근200트레이": "개",
-    "당근200탑실링지": "개",
-    "당근200표시사항 스티커": "장",
-    "당근 400 스티커": "개",
-    "파우치(200*250)": "개",
-    "파우치 (300*400)": "개",
-    "파우치 (400*600)": "개",
-    "파우치(200*160)": "개",
-    "카톤박스(특소)": "개",
-    "카톤박스(소)": "개",
-    "카톤박스(중)": "개",
-    "카톤박스(대)": "개"
+BASE_ITEM_UNITS = {
+    "소금 (백설 꽃소금)": "g", "시타 프리올리바 올리브 오일": "ml",
+    "홀그레인 머스타드(르네디종)": "g", "홀그레인 머스타드(오뚜기)": "g",
+    "라임 주스(레이지)": "ml", "설탕(백설)": "g", "후추(오뚜기)": "g",
+    "당근200트레이": "개", "당근200탑실링지": "개", "당근200표시사항 스티커": "장",
+    "당근 400 스티커": "개", "파우치(200*250)": "개", "파우치 (300*400)": "개",
+    "파우치 (400*600)": "개", "파우치(200*160)": "개",
+    "카톤박스(특소)": "개", "카톤박스(소)": "개", "카톤박스(중)": "개", "카톤박스(대)": "개"
 }
 
 ITEM_PACKAGE_SIZES = {
-    "시타 프리올리바 올리브 오일": {"size": 5000, "unit": "ml"},   # 1통 = 5L = 5,000ml
-    "홀그레인 머스타드(르네디종)": {"size": 5000, "unit": "g"}        # 1통 = 5kg = 5,000g
+    "시타 프리올리바 올리브 오일": {"size": 5000, "unit": "ml"},
+    "홀그레인 머스타드(르네디종)": {"size": 5000, "unit": "g"}
 }
 
-VENDORS = ["케이앤에스", "은성특수산업", "제이원글로벌", "삼보판지", "기타 / 직접입력"]
+BASE_VENDORS = ["케이앤에스", "은성특수산업", "제이원글로벌", "삼보판지", "기타 / 직접입력"]
+
+# 📌 동적 데이터 적용 (중복 제거 유지)
+added_subs, added_vendors, added_units = load_master_data()
+DYNAMIC_SUB_MATERIALS = list(dict.fromkeys(BASE_SUB_MATERIALS + added_subs))
+DYNAMIC_VENDORS = list(dict.fromkeys(BASE_VENDORS + added_vendors))
+ITEM_UNITS = BASE_ITEM_UNITS.copy()
+ITEM_UNITS.update(added_units)
 
 # ---------------------------------------------------------
 # 2. 탭 구성
 # ---------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📦 입고 등록", 
     "🥣 당근라페 생산 (자동)", 
     "📤 수기 출고", 
     "🛠️ 재고 조정", 
     "📊 원부재료 수불부 현황",
-    "🏪 거래처별 입고 현황"
+    "🏪 거래처별 입고 현황",
+    "⚙️ 기초정보 관리"  # 신규 추가 탭
 ])
 
 # ---------------------------------------------------------
@@ -207,7 +227,7 @@ with tab1:
     
     col1, col2 = st.columns(2)
     with col1:
-        vendor_name = st.selectbox("거래처(공급업체) 선택", VENDORS, key="in_vendor")
+        vendor_name = st.selectbox("거래처(공급업체) 선택", DYNAMIC_VENDORS, key="in_vendor")
         if vendor_name == "기타 / 직접입력":
             vendor_name = st.text_input("거래처명 직접 입력", placeholder="예: OO유통")
             
@@ -215,7 +235,7 @@ with tab1:
         if category == "원재료":
             item_name = st.selectbox("입고 재료 선택", RAW_MATERIALS, key="in_raw")
         else:
-            item_name = st.selectbox("입고 재료 선택", SUB_MATERIALS, key="in_sub")
+            item_name = st.selectbox("입고 재료 선택", DYNAMIC_SUB_MATERIALS, key="in_sub")
             
     with col2:
         unit_type = st.selectbox("입고 단위", ["kg", "g", "L", "ml", "개", "장"])
@@ -311,7 +331,7 @@ with tab2:
             "원부재료명": [
                 "소금 (백설 꽃소금)", "시타 프리올리바 올리브 오일", "홀그레인 머스타드(르네디종)", 
                 "홀그레인 머스타드(오뚜기)", "라임 주스(레이지)", "설탕(백설)", "후추(오뚜기)",
-                "파우치(200*250)", "당근 400 스티커", "카톤박스(중)" # <--- 카톤박스(중)으로 수정
+                "파우치(200*250)", "당근 400 스티커", "카톤박스(중)"
             ],
             "차감 수량": [
                 f"{66.1 * batches} g", f"{608.2 * batches} ml", f"{260.7 * batches} g",
@@ -319,7 +339,7 @@ with tab2:
                 f"{count} 개", f"{count} 개", f"{count // 8} 개"
             ]
         }
-        box_str = f"{count // 8} 박스(중)" # <--- 박스(중)으로 수정
+        box_str = f"{count // 8} 박스(중)"
     st.table(pd.DataFrame(preview_data))
     
     if st.button("생산 실적 저장 및 레시피 자동 출고"):
@@ -347,7 +367,7 @@ with tab3:
     
     col_out1, col_out2 = st.columns(2)
     with col_out1:
-        target_item_out = st.selectbox("출고 원부재료 선택", RAW_MATERIALS + SUB_MATERIALS, key="out_item")
+        target_item_out = st.selectbox("출고 원부재료 선택", RAW_MATERIALS + DYNAMIC_SUB_MATERIALS, key="out_item")
         out_reason = st.selectbox("출고 목적", ["제품 제조 사용", "샘플/테스트 출고", "이벤트/증정용 사용", "기타 수기 출고"])
     with col_out2:
         selected_out_unit = ITEM_UNITS.get(target_item_out, "개")
@@ -385,7 +405,7 @@ with tab4:
     
     col_adj1, col_adj2 = st.columns(2)
     with col_adj1:
-        target_item_adj = st.selectbox("조정 원부재료 선택", RAW_MATERIALS + SUB_MATERIALS, key="adj_item")
+        target_item_adj = st.selectbox("조정 원부재료 선택", RAW_MATERIALS + DYNAMIC_SUB_MATERIALS, key="adj_item")
         adj_type = st.radio("조정 구분", ["파손/불량 손실 (-)", "실사 재고 증가 (+)", "실사 재고 감소 (-)"])
         adj_reason = st.selectbox("조정 사유", ["보관 중 파손/불량", "유통기한 경과 소진", "재고 실사 차이 반영", "기타 수동 조정"])
     with col_adj2:
@@ -416,7 +436,7 @@ with tab4:
         st.info("등록된 재고 조정 내역이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 5: 수불부 현황판 (옵션 및 필터링 기능 강화)
+# TAB 5: 수불부 현황판
 # ---------------------------------------------------------
 with tab5:
     st.subheader("📋 원부재료 일자별 수불현황판")
@@ -431,7 +451,7 @@ with tab5:
     with col_sd2:
         end_d = st.date_input("조회 종료일 선택", today, key="subul_end_date")
     with col_sd3:
-        st.write("") # 정렬 맞춤용 빈 공간
+        st.write("") 
         st.write("")
         hide_no_change = st.checkbox("💡 입출고 및 변동이 없는 날짜 숨기기", value=False, key="hide_no_change")
 
@@ -525,7 +545,7 @@ with tab5:
                 "재고조정": d_adj, "당일재고": day_end_stock, "안전재고": safe_qty
             })
 
-    # 원재료 데이터프레임 가공 및 정렬/필터링
+    # 원재료 데이터프레임 가공
     df_raw_calc = pd.DataFrame(raw_subul)
     
     col_raw1, col_raw2, col_raw3, col_raw4 = st.columns([2, 2, 1, 1])
@@ -545,7 +565,6 @@ with tab5:
             use_container_width=True
         )
 
-    # 원재료 필터링 적용
     if selected_raw_item != "전체 원재료 보기":
         df_raw_calc = df_raw_calc[df_raw_calc["재료명"] == selected_raw_item]
     
@@ -557,7 +576,6 @@ with tab5:
             (df_raw_calc["재고조정"] != 0)
         ]
 
-    # 날짜 최우선 정렬 (일자 -> 재료명)
     df_raw_calc = df_raw_calc.sort_values(by=["일자", "재료명"]).reset_index(drop=True)
 
     st.dataframe(
@@ -570,9 +588,9 @@ with tab5:
 
     st.divider()
 
-    # 2. 부재료 일자별 수불 계산
+    # 2. 부재료 일자별 수불 계산 (DYNAMIC_SUB_MATERIALS 사용)
     sub_subul = []
-    for item in SUB_MATERIALS:
+    for item in DYNAMIC_SUB_MATERIALS:
         unit = ITEM_UNITS.get(item, "개")
         clean_item = item.strip()
         
@@ -600,7 +618,7 @@ with tab5:
             elif clean_item == "당근200표시사항 스티커": prior_auto_out = math.ceil(p200_p / 5) if p200_p > 0 else 0
             elif clean_item == "카톤박스(특소)": prior_auto_out = p200_p // 6
             elif clean_item in ["파우치(200*250)", "당근 400 스티커"]: prior_auto_out = p400_p
-            elif clean_item == "카톤박스(중)": prior_auto_out = p400_p // 8 # <--- 카톤박스(중)으로 수정
+            elif clean_item == "카톤박스(중)": prior_auto_out = p400_p // 8
 
         prior_manual_out = int(round(df_out[(df_out[out_item_col].astype(str).str.strip() == clean_item) & (df_out["일자_dt"] < start_d)]["출고수량"].sum())) if not df_out.empty and "일자_dt" in df_out.columns and out_item_col else 0
         
@@ -628,7 +646,7 @@ with tab5:
                 elif clean_item == "당근200표시사항 스티커": d_auto_out = math.ceil(p200 / 5) if p200 > 0 else 0
                 elif clean_item == "카톤박스(특소)": d_auto_out = p200 // 6
                 elif clean_item in ["파우치(200*250)", "당근 400 스티커"]: d_auto_out = p400
-                elif clean_item == "카톤박스(중)": d_auto_out = p400 // 8 # <--- 카톤박스(중)으로 수정
+                elif clean_item == "카톤박스(중)": d_auto_out = p400 // 8
 
             d_manual_out = int(round(df_out[(df_out[out_item_col].astype(str).str.strip() == clean_item) & (df_out["일자_dt"] == curr_d)]["출고수량"].sum())) if not df_out.empty and "일자_dt" in df_out.columns and out_item_col else 0
             
@@ -647,14 +665,13 @@ with tab5:
                 "재고조정": d_adj, "당일재고": day_end_stock, "안전재고": safe_qty
             })
 
-    # 부재료 데이터프레임 가공 및 정렬/필터링
     df_sub_calc = pd.DataFrame(sub_subul)
 
     col_sub1, col_sub2, col_sub3, col_sub4 = st.columns([2, 2, 1, 1])
     with col_sub1:
         st.markdown("### 📦 부재료 일자별 수불부")
     with col_sub2:
-        selected_sub_item = st.selectbox("조회할 부재료 선택", ["전체 부재료 보기"] + SUB_MATERIALS, key="select_sub_item")
+        selected_sub_item = st.selectbox("조회할 부재료 선택", ["전체 부재료 보기"] + DYNAMIC_SUB_MATERIALS, key="select_sub_item")
     with col_sub3:
         if st.button("🖨️ 부재료 인쇄/PDF", key="print_sub", use_container_width=True):
             st.components.v1.html("<script>window.print();</script>", height=0)
@@ -667,7 +684,6 @@ with tab5:
             use_container_width=True
         )
 
-    # 부재료 필터링 적용
     if selected_sub_item != "전체 부재료 보기":
         df_sub_calc = df_sub_calc[df_sub_calc["재료명"] == selected_sub_item]
         
@@ -679,7 +695,6 @@ with tab5:
             (df_sub_calc["재고조정"] != 0)
         ]
 
-    # 날짜 최우선 정렬 (일자 -> 재료명)
     df_sub_calc = df_sub_calc.sort_values(by=["일자", "재료명"]).reset_index(drop=True)
 
     st.dataframe(
@@ -744,3 +759,52 @@ with tab6:
         )
     else:
         st.info("등록된 거래처 입고 기록이 없습니다.")
+
+# ---------------------------------------------------------
+# TAB 7: 기초정보 관리 (신규)
+# ---------------------------------------------------------
+with tab7:
+    st.subheader("⚙️ 기초정보 관리 (부재료 & 거래처 추가)")
+    st.info("이곳에서 등록한 부재료와 거래처는 자동으로 구글 시트에 저장되며, 이후 입고 및 수불 등록 시 드롭다운 목록에 반영됩니다.")
+    
+    col_m1, col_m2 = st.columns(2)
+    
+    with col_m1:
+        st.markdown("#### 📦 새 부재료 추가")
+        new_sub_name = st.text_input("새 부재료명", placeholder="예: 아이스박스(소)")
+        new_sub_unit = st.selectbox("단위", ["개", "장", "통", "kg", "g", "L", "ml"])
+        
+        if st.button("부재료 추가하기"):
+            if new_sub_name.strip():
+                if new_sub_name.strip() in DYNAMIC_SUB_MATERIALS:
+                    st.warning("이미 등록된 부재료입니다.")
+                else:
+                    if append_data("기초정보", ["부재료", new_sub_name.strip(), new_sub_unit]):
+                        st.success(f"✅ '{new_sub_name}' 부재료가 추가되었습니다.")
+                        st.rerun()  # 화면을 새로고침하여 즉시 반영
+            else:
+                st.warning("부재료명을 입력하세요.")
+                
+    with col_m2:
+        st.markdown("#### 🏪 새 거래처 추가")
+        new_vendor_name = st.text_input("새 거래처명", placeholder="예: OO패키징")
+        
+        if st.button("거래처 추가하기"):
+            if new_vendor_name.strip():
+                if new_vendor_name.strip() in DYNAMIC_VENDORS:
+                    st.warning("이미 등록된 거래처입니다.")
+                else:
+                    # 거래처는 단위가 불필요하므로 빈 문자열 처리
+                    if append_data("기초정보", ["거래처", new_vendor_name.strip(), ""]):
+                        st.success(f"✅ '{new_vendor_name}' 거래처가 추가되었습니다.")
+                        st.rerun()
+            else:
+                st.warning("거래처명을 입력하세요.")
+                
+    st.divider()
+    st.markdown("### 📋 현재 추가된 동적 기초정보 목록")
+    df_master = load_data("기초정보")
+    if not df_master.empty:
+        st.dataframe(df_master, use_container_width=True)
+    else:
+        st.info("현재 동적으로 추가된 기초정보 데이터가 없습니다.")
