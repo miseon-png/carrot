@@ -162,7 +162,7 @@ RAW_MATERIALS = [
     "라임 주스(레이지)",
     "설탕(백설)",
     "후추(오뚜기)",
-    "오리엔탈 드레싱 25g"  # ✅ 신규 원재료 추가됨
+    "오리엔탈 드레싱 25g"
 ]
 
 BASE_SUB_MATERIALS = [
@@ -184,7 +184,7 @@ BASE_ITEM_UNITS = {
     "소금 (백설 꽃소금)": "g", "시타 프리올리바 올리브 오일": "ml",
     "홀그레인 머스타드(르네디종)": "g", "홀그레인 머스타드(오뚜기)": "g",
     "라임 주스(레이지)": "ml", "설탕(백설)": "g", "후추(오뚜기)": "g",
-    "오리엔탈 드레싱 25g": "개",  # ✅ 신규 단위 추가됨
+    "오리엔탈 드레싱 25g": "개",
     "당근200트레이": "개", "당근200탑실링지": "개", "당근200표시사항 스티커": "장",
     "당근 400 스티커": "개", "파우치(200*250)": "개", "파우치 (300*400)": "개",
     "파우치 (400*600)": "개", "파우치(200*160)": "개",
@@ -206,14 +206,15 @@ ITEM_UNITS = BASE_ITEM_UNITS.copy()
 ITEM_UNITS.update(added_units)
 
 # ---------------------------------------------------------
-# 2. 탭 구성
+# 2. 탭 구성 (총 8개로 분리)
 # ---------------------------------------------------------
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📦 입고 등록", 
     "🥣 당근라페 생산 (자동)", 
     "📤 수기 출고", 
     "🛠️ 재고 조정", 
-    "📊 원부재료 수불부 현황",
+    "📊 원재료 수불부",    # 분리된 탭 1
+    "📦 부재료 수불부",    # 분리된 탭 2
     "🏪 거래처별 입고 현황",
     "⚙️ 기초정보 관리"
 ])
@@ -437,10 +438,10 @@ with tab4:
         st.info("등록된 재고 조정 내역이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 5: 수불부 현황판
+# TAB 5: 원재료 수불부
 # ---------------------------------------------------------
 with tab5:
-    st.subheader("📋 원부재료 일자별 수불현황판")
+    st.subheader("📊 원재료 일자별 수불부")
     st.info("💡 선택한 기간 동안 매일의 수불 흐름이 일자별로 표시됩니다.")
     
     today = datetime.date.today()
@@ -448,13 +449,14 @@ with tab5:
     
     col_sd1, col_sd2, col_sd3 = st.columns([1, 1, 1])
     with col_sd1:
-        start_d = st.date_input("조회 시작일 선택", first_day, key="subul_start_date")
+        raw_start_d = st.date_input("조회 시작일 선택", first_day, key="raw_start_date")
     with col_sd2:
-        end_d = st.date_input("조회 종료일 선택", today, key="subul_end_date")
+        raw_end_d = st.date_input("조회 종료일 선택", today, key="raw_end_date")
     with col_sd3:
         st.write("") 
         st.write("")
-        hide_no_change = st.checkbox("💡 입출고 및 변동이 없는 날짜 숨기기", value=False, key="hide_no_change")
+        # ✅ 기본값을 True로 설정하여 빈 날짜 숨기기
+        raw_hide_no_change = st.checkbox("💡 입출고 및 변동이 없는 날짜 숨기기", value=True, key="raw_hide_no_change")
 
     df_init = load_data("기초재고")
     df_in = load_data("입고기록")
@@ -462,14 +464,13 @@ with tab5:
     df_out = load_data("수기출고")
     df_adj = load_data("재고조정")
     
-    date_list = [start_d + datetime.timedelta(days=i) for i in range((end_d - start_d).days + 1)]
+    raw_date_list = [raw_start_d + datetime.timedelta(days=i) for i in range((raw_end_d - raw_start_d).days + 1)]
     
     in_item_col = get_item_col(df_in)
     init_item_col = get_item_col(df_init)
     out_item_col = get_item_col(df_out)
     adj_item_col = get_item_col(df_adj)
 
-    # 1. 원재료 일자별 수불 계산
     raw_subul = []
     for item in RAW_MATERIALS:
         unit = ITEM_UNITS.get(item, "g")
@@ -488,30 +489,30 @@ with tab5:
 
         prior_in = 0.0
         if not df_in.empty and "일자_dt" in df_in.columns and in_item_col:
-            p_in_df = df_in[(df_in[in_item_col].astype(str).str.strip() == clean_item) & (df_in["일자_dt"] < start_d)]
+            p_in_df = df_in[(df_in[in_item_col].astype(str).str.strip() == clean_item) & (df_in["일자_dt"] < raw_start_d)]
             prior_in = get_converted_in_qty(p_in_df)
         
         prior_auto_out = 0
         if not df_prod.empty and "일자_dt" in df_prod.columns and "생산제품" in df_prod.columns:
-            p200_p = df_prod[(df_prod["생산제품"] == "당근라페 200g") & (df_prod["일자_dt"] < start_d)]["생산수량"].sum()
-            p400_p = df_prod[(df_prod["생산제품"] == "당근라페 400g") & (df_prod["일자_dt"] < start_d)]["생산수량"].sum()
+            p200_p = df_prod[(df_prod["생산제품"] == "당근라페 200g") & (df_prod["일자_dt"] < raw_start_d)]["생산수량"].sum()
+            p400_p = df_prod[(df_prod["생산제품"] == "당근라페 400g") & (df_prod["일자_dt"] < raw_start_d)]["생산수량"].sum()
             if clean_item == "소금 (백설 꽃소금)": prior_auto_out = (p200_p // 6) * 24 + (p400_p // 8) * 65
             elif clean_item == "시타 프리올리바 올리브 오일": prior_auto_out = (p200_p // 6) * 223 + (p400_p // 8) * 594
             elif clean_item in ["홀그레인 머스타드(르네디종)", "홀그레인 머스타드(오뚜기)"]: prior_auto_out = (p200_p // 6) * 95 + (p400_p // 8) * 254
             elif clean_item in ["라임 주스(레이지)", "설탕(백설)"]: prior_auto_out = (p200_p // 6) * 32 + (p400_p // 8) * 84
             elif clean_item == "후추(오뚜기)": prior_auto_out = (p200_p // 6) * 1 + (p400_p // 8) * 2
 
-        prior_manual_out = df_out[(df_out[out_item_col].astype(str).str.strip() == clean_item) & (df_out["일자_dt"] < start_d)]["출고수량"].sum() if not df_out.empty and "일자_dt" in df_out.columns and out_item_col else 0
+        prior_manual_out = df_out[(df_out[out_item_col].astype(str).str.strip() == clean_item) & (df_out["일자_dt"] < raw_start_d)]["출고수량"].sum() if not df_out.empty and "일자_dt" in df_out.columns and out_item_col else 0
         
         prior_adj = 0
         if not df_adj.empty and "일자_dt" in df_adj.columns and adj_item_col:
-            p_adj_df = df_adj[(df_adj[adj_item_col].astype(str).str.strip() == clean_item) & (df_adj["일자_dt"] < start_d)]
+            p_adj_df = df_adj[(df_adj[adj_item_col].astype(str).str.strip() == clean_item) & (df_adj["일자_dt"] < raw_start_d)]
             for _, r in p_adj_df.iterrows():
                 prior_adj += int(round(r["조정수량"])) if "증가" in str(r.get("조정구분", "")) else -int(round(r["조정수량"]))
 
         current_running_stock = int(round(base_init + prior_in - prior_auto_out - prior_manual_out + prior_adj))
 
-        for curr_d in date_list:
+        for curr_d in raw_date_list:
             prev_carryover = current_running_stock
             
             d_in = 0
@@ -546,22 +547,19 @@ with tab5:
                 "재고조정": d_adj, "당일재고": day_end_stock, "안전재고": safe_qty
             })
 
-    # 원재료 데이터프레임 가공
     df_raw_calc = pd.DataFrame(raw_subul)
     
-    col_raw1, col_raw2, col_raw3, col_raw4 = st.columns([2, 2, 1, 1])
+    col_raw1, col_raw2, col_raw3 = st.columns([2, 1, 1])
     with col_raw1:
-        st.markdown("### 🥕 원재료 일자별 수불부")
-    with col_raw2:
         selected_raw_item = st.selectbox("조회할 원재료 선택", ["전체 원재료 보기"] + RAW_MATERIALS, key="select_raw_item")
-    with col_raw3:
-        if st.button("🖨️ 원재료 인쇄/PDF", key="print_raw", use_container_width=True):
+    with col_raw2:
+        if st.button("🖨️ 인쇄/PDF", key="print_raw", use_container_width=True):
             st.components.v1.html("<script>window.print();</script>", height=0)
-    with col_raw4:
+    with col_raw3:
         st.download_button(
-            label="📥 원재료 CSV",
+            label="📥 CSV 다운로드",
             data=to_csv(df_raw_calc),
-            file_name=f"원재료_일자별수불부_{start_d}_{end_d}.csv",
+            file_name=f"원재료_수불부_{raw_start_d}_{raw_end_d}.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -569,7 +567,7 @@ with tab5:
     if selected_raw_item != "전체 원재료 보기":
         df_raw_calc = df_raw_calc[df_raw_calc["재료명"] == selected_raw_item]
     
-    if hide_no_change:
+    if raw_hide_no_change:
         df_raw_calc = df_raw_calc[
             (df_raw_calc["금일입고"] != 0) | 
             (df_raw_calc["생산출고(자동)"] != 0) | 
@@ -587,9 +585,40 @@ with tab5:
         use_container_width=True
     )
 
-    st.divider()
+# ---------------------------------------------------------
+# TAB 6: 부재료 수불부
+# ---------------------------------------------------------
+with tab6:
+    st.subheader("📦 부재료 일자별 수불부")
+    st.info("💡 선택한 기간 동안 매일의 수불 흐름이 일자별로 표시됩니다.")
+    
+    today = datetime.date.today()
+    first_day = today.replace(day=1)
+    
+    col_sub_sd1, col_sub_sd2, col_sub_sd3 = st.columns([1, 1, 1])
+    with col_sub_sd1:
+        sub_start_d = st.date_input("조회 시작일 선택", first_day, key="sub_start_date")
+    with col_sub_sd2:
+        sub_end_d = st.date_input("조회 종료일 선택", today, key="sub_end_date")
+    with col_sub_sd3:
+        st.write("") 
+        st.write("")
+        # ✅ 기본값을 True로 설정하여 빈 날짜 숨기기
+        sub_hide_no_change = st.checkbox("💡 입출고 및 변동이 없는 날짜 숨기기", value=True, key="sub_hide_no_change")
 
-    # 2. 부재료 일자별 수불 계산 (DYNAMIC_SUB_MATERIALS 사용)
+    df_init = load_data("기초재고")
+    df_in = load_data("입고기록")
+    df_prod = load_data("생산기록")
+    df_out = load_data("수기출고")
+    df_adj = load_data("재고조정")
+    
+    sub_date_list = [sub_start_d + datetime.timedelta(days=i) for i in range((sub_end_d - sub_start_d).days + 1)]
+    
+    in_item_col = get_item_col(df_in)
+    init_item_col = get_item_col(df_init)
+    out_item_col = get_item_col(df_out)
+    adj_item_col = get_item_col(df_adj)
+
     sub_subul = []
     for item in DYNAMIC_SUB_MATERIALS:
         unit = ITEM_UNITS.get(item, "개")
@@ -608,30 +637,30 @@ with tab5:
 
         prior_in = 0
         if not df_in.empty and "일자_dt" in df_in.columns and in_item_col:
-            p_in_df = df_in[(df_in[in_item_col].astype(str).str.strip() == clean_item) & (df_in["일자_dt"] < start_d)]
+            p_in_df = df_in[(df_in[in_item_col].astype(str).str.strip() == clean_item) & (df_in["일자_dt"] < sub_start_d)]
             prior_in = int(round(get_converted_in_qty(p_in_df)))
         
         prior_auto_out = 0
         if not df_prod.empty and "일자_dt" in df_prod.columns and "생산제품" in df_prod.columns:
-            p200_p = df_prod[(df_prod["생산제품"] == "당근라페 200g") & (df_prod["일자_dt"] < start_d)]["생산수량"].sum()
-            p400_p = df_prod[(df_prod["생산제품"] == "당근라페 400g") & (df_prod["일자_dt"] < start_d)]["생산수량"].sum()
+            p200_p = df_prod[(df_prod["생산제품"] == "당근라페 200g") & (df_prod["일자_dt"] < sub_start_d)]["생산수량"].sum()
+            p400_p = df_prod[(df_prod["생산제품"] == "당근라페 400g") & (df_prod["일자_dt"] < sub_start_d)]["생산수량"].sum()
             if clean_item in ["당근200트레이", "당근200탑실링지"]: prior_auto_out = p200_p
             elif clean_item == "당근200표시사항 스티커": prior_auto_out = math.ceil(p200_p / 5) if p200_p > 0 else 0
             elif clean_item == "카톤박스(특소)": prior_auto_out = p200_p // 6
             elif clean_item in ["파우치(200*250)", "당근 400 스티커"]: prior_auto_out = p400_p
             elif clean_item == "카톤박스(중)": prior_auto_out = p400_p // 8
 
-        prior_manual_out = int(round(df_out[(df_out[out_item_col].astype(str).str.strip() == clean_item) & (df_out["일자_dt"] < start_d)]["출고수량"].sum())) if not df_out.empty and "일자_dt" in df_out.columns and out_item_col else 0
+        prior_manual_out = int(round(df_out[(df_out[out_item_col].astype(str).str.strip() == clean_item) & (df_out["일자_dt"] < sub_start_d)]["출고수량"].sum())) if not df_out.empty and "일자_dt" in df_out.columns and out_item_col else 0
         
         prior_adj = 0
         if not df_adj.empty and "일자_dt" in df_adj.columns and adj_item_col:
-            p_adj_df = df_adj[(df_adj[adj_item_col].astype(str).str.strip() == clean_item) & (df_adj["일자_dt"] < start_d)]
+            p_adj_df = df_adj[(df_adj[adj_item_col].astype(str).str.strip() == clean_item) & (df_adj["일자_dt"] < sub_start_d)]
             for _, r in p_adj_df.iterrows():
                 prior_adj += int(round(r["조정수량"])) if "증가" in str(r.get("조정구분", "")) else -int(round(r["조정수량"]))
 
         current_running_stock = base_init + prior_in - prior_auto_out - prior_manual_out + prior_adj
 
-        for curr_d in date_list:
+        for curr_d in sub_date_list:
             prev_carryover = current_running_stock
             
             d_in = 0
@@ -668,19 +697,17 @@ with tab5:
 
     df_sub_calc = pd.DataFrame(sub_subul)
 
-    col_sub1, col_sub2, col_sub3, col_sub4 = st.columns([2, 2, 1, 1])
+    col_sub1, col_sub2, col_sub3 = st.columns([2, 1, 1])
     with col_sub1:
-        st.markdown("### 📦 부재료 일자별 수불부")
-    with col_sub2:
         selected_sub_item = st.selectbox("조회할 부재료 선택", ["전체 부재료 보기"] + DYNAMIC_SUB_MATERIALS, key="select_sub_item")
-    with col_sub3:
-        if st.button("🖨️ 부재료 인쇄/PDF", key="print_sub", use_container_width=True):
+    with col_sub2:
+        if st.button("🖨️ 인쇄/PDF", key="print_sub", use_container_width=True):
             st.components.v1.html("<script>window.print();</script>", height=0)
-    with col_sub4:
+    with col_sub3:
         st.download_button(
-            label="📥 부재료 CSV",
+            label="📥 CSV 다운로드",
             data=to_csv(df_sub_calc),
-            file_name=f"부재료_일자별수불부_{start_d}_{end_d}.csv",
+            file_name=f"부재료_수불부_{sub_start_d}_{sub_end_d}.csv",
             mime="text/csv",
             use_container_width=True
         )
@@ -688,7 +715,7 @@ with tab5:
     if selected_sub_item != "전체 부재료 보기":
         df_sub_calc = df_sub_calc[df_sub_calc["재료명"] == selected_sub_item]
         
-    if hide_no_change:
+    if sub_hide_no_change:
         df_sub_calc = df_sub_calc[
             (df_sub_calc["금일입고"] != 0) | 
             (df_sub_calc["생산출고(자동)"] != 0) | 
@@ -707,9 +734,9 @@ with tab5:
     )
 
 # ---------------------------------------------------------
-# TAB 6: 거래처별 입고 현황
+# TAB 7: 거래처별 입고 현황
 # ---------------------------------------------------------
-with tab6:
+with tab7:
     st.subheader("🏪 거래처별 구매/입고 현황")
     df_in = load_data("입고기록")
     
@@ -762,9 +789,9 @@ with tab6:
         st.info("등록된 거래처 입고 기록이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 7: 기초정보 관리
+# TAB 8: 기초정보 관리
 # ---------------------------------------------------------
-with tab7:
+with tab8:
     st.subheader("⚙️ 기초정보 관리 (부재료 & 거래처 추가)")
     st.info("이곳에서 등록한 부재료와 거래처는 자동으로 구글 시트에 저장되며, 이후 입고 및 수불 등록 시 드롭다운 목록에 반영됩니다.")
     
