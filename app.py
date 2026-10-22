@@ -223,8 +223,8 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "📤 수기 출고", 
     "🛠️ 재고 조정", 
     "📊 원재료 수불부", 
-    "🍶 부재료 수불부",    # ✅ 신규: 부재료 탭
-    "📦 부자재 수불부",    # ✅ 신규: 부자재 탭
+    "🍶 부재료 수불부", 
+    "📦 부자재 수불부", 
     "🏪 거래처 현황",
     "⚙️ 기초정보 관리"
 ])
@@ -243,7 +243,7 @@ with tab1:
         if vendor_name == "기타 / 직접입력":
             vendor_name = st.text_input("거래처명 직접 입력", placeholder="예: OO유통")
             
-        category = st.selectbox("구분", ["원재료", "부재료", "부자재"]) # ✅ 3가지로 분리
+        category = st.selectbox("구분", ["원재료", "부재료", "부자재"]) 
         if category == "원재료":
             item_name = st.selectbox("입고 품목 선택", RAW_MATERIALS, key="in_raw")
         elif category == "부재료":
