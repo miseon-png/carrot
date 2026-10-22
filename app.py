@@ -79,7 +79,6 @@ def load_data(worksheet_name):
             else:
                 return pd.DataFrame(columns=data[0] if len(data) > 0 else [])
         except Exception as e:
-            # 기초정보 시트가 없을 때의 경고 방지용
             if worksheet_name != "기초정보":
                 st.warning(f"'{worksheet_name}' 시트를 불러오지 못했습니다: {e}")
             return pd.DataFrame()
@@ -162,7 +161,8 @@ RAW_MATERIALS = [
     "홀그레인 머스타드(오뚜기)",
     "라임 주스(레이지)",
     "설탕(백설)",
-    "후추(오뚜기)"
+    "후추(오뚜기)",
+    "오리엔탈 드레싱 25g"  # ✅ 신규 원재료 추가됨
 ]
 
 BASE_SUB_MATERIALS = [
@@ -184,6 +184,7 @@ BASE_ITEM_UNITS = {
     "소금 (백설 꽃소금)": "g", "시타 프리올리바 올리브 오일": "ml",
     "홀그레인 머스타드(르네디종)": "g", "홀그레인 머스타드(오뚜기)": "g",
     "라임 주스(레이지)": "ml", "설탕(백설)": "g", "후추(오뚜기)": "g",
+    "오리엔탈 드레싱 25g": "개",  # ✅ 신규 단위 추가됨
     "당근200트레이": "개", "당근200탑실링지": "개", "당근200표시사항 스티커": "장",
     "당근 400 스티커": "개", "파우치(200*250)": "개", "파우치 (300*400)": "개",
     "파우치 (400*600)": "개", "파우치(200*160)": "개",
@@ -214,7 +215,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🛠️ 재고 조정", 
     "📊 원부재료 수불부 현황",
     "🏪 거래처별 입고 현황",
-    "⚙️ 기초정보 관리"  # 신규 추가 탭
+    "⚙️ 기초정보 관리"
 ])
 
 # ---------------------------------------------------------
@@ -362,18 +363,18 @@ with tab2:
 # TAB 3: 수기 출고
 # ---------------------------------------------------------
 with tab3:
-    st.subheader("수기 출고 등록 (타 용도 사용)")
+    st.subheader("수기 출고 등록 (타 용도 사용 및 판매 출고)")
     out_date = st.date_input("출고 일자", datetime.date.today(), key="out_date")
     
     col_out1, col_out2 = st.columns(2)
     with col_out1:
         target_item_out = st.selectbox("출고 원부재료 선택", RAW_MATERIALS + DYNAMIC_SUB_MATERIALS, key="out_item")
-        out_reason = st.selectbox("출고 목적", ["제품 제조 사용", "샘플/테스트 출고", "이벤트/증정용 사용", "기타 수기 출고"])
+        out_reason = st.selectbox("출고 목적", ["제품 제조 사용", "샘플/테스트 출고", "이벤트/증정용 사용", "발주서 판매 출고", "기타 수기 출고"])
     with col_out2:
         selected_out_unit = ITEM_UNITS.get(target_item_out, "개")
         out_qty = st.number_input(f"출고 수량 ({selected_out_unit})", min_value=0.01, step=1.0, key="out_qty")
         st.caption(f"💡 **[{target_item_out}]**의 출고 적용 단위: **{selected_out_unit}**")
-        out_note = st.text_input("상세 비고 (선택사항)", placeholder="예: B제품 포장용 카톤박스 10개 사용", key="out_note")
+        out_note = st.text_input("상세 비고 (선택사항)", placeholder="예: 쿠팡 발주 출고건 차감", key="out_note")
         
     if st.button("수기 출고 저장"):
         if out_qty <= 0:
@@ -761,7 +762,7 @@ with tab6:
         st.info("등록된 거래처 입고 기록이 없습니다.")
 
 # ---------------------------------------------------------
-# TAB 7: 기초정보 관리 (신규)
+# TAB 7: 기초정보 관리
 # ---------------------------------------------------------
 with tab7:
     st.subheader("⚙️ 기초정보 관리 (부재료 & 거래처 추가)")
