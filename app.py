@@ -202,7 +202,7 @@ def print_subul_html_button(df, title, filename_prefix="수불부"):
         body {{ margin: 0; padding: 0; background: transparent; }}
         .print-btn {{
             width: 100%;
-            height: 38px;
+            height: 42px;
             background-color: #ff4b4b;
             color: white;
             border: none;
@@ -214,6 +214,7 @@ def print_subul_html_button(df, title, filename_prefix="수불부"):
             align-items: center;
             justify-content: center;
             font-family: inherit;
+            box-sizing: border-box;
             transition: background-color 0.2s ease;
         }}
         .print-btn:hover {{ background-color: #e03e3e; }}
@@ -237,7 +238,75 @@ def print_subul_html_button(df, title, filename_prefix="수불부"):
     </body>
     </html>
     """
-    st.components.v1.html(btn_html, height=42)
+    st.components.v1.html(btn_html, height=44)
+
+# ---------------------------------------------------------
+# 🌟 수불부 하단 총 정리 집계 카드 및 요약표 렌더링 함수
+# ---------------------------------------------------------
+def render_subul_summary(df_calc):
+    if df_calc.empty:
+        return
+    
+    st.markdown("---")
+    st.markdown("### 📌 수불 기간 총 정리 요약")
+    
+    # 1. 단일 품목 조회 시: 직관적인 Metric 카드 출력
+    items_in_df = df_calc["품목명"].unique()
+    if len(items_in_df) == 1:
+        single_item = items_in_df[0]
+        u = df_calc["단위"].iloc[0]
+        
+        # 첫날 전일이월 및 마지막날 당일재고 추출
+        df_sorted = df_calc.sort_values(by="일자")
+        start_stock = df_sorted["전일이월"].iloc[0]
+        final_stock = df_sorted["당일재고"].iloc[-1]
+        
+        sum_in = df_calc["금일입고"].sum()
+        sum_auto = df_calc["생산출고(자동)"].sum()
+        sum_manual = df_calc["수기출고"].sum()
+        sum_adj = df_calc["재고조정"].sum()
+        safe = df_calc["안전재고"].iloc[-1]
+        
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("시작 기초재고", f"{start_stock:,} {u}")
+        c2.metric("총 입고량", f"{sum_in:,} {u}")
+        c3.metric("총 출고량(자동+수기)", f"{(sum_auto + sum_manual):,} {u}", delta=f"-{(sum_auto + sum_manual):,}")
+        c4.metric("재고조정 순합계", f"{sum_adj:+,} {u}")
+        c5.metric("최종 기말재고", f"{final_stock:,} {u}", delta=f"안전재고: {safe:,} {u}")
+    
+    # 2. 전체 품목 or 공통: 품목별 집계 요약표
+    summary_rows = []
+    for itm, g in df_calc.groupby("품목명", sort=False):
+        g_sorted = g.sort_values(by="일자")
+        init_st = g_sorted["전일이월"].iloc[0]
+        end_st = g_sorted["당일재고"].iloc[-1]
+        u = g["단위"].iloc[0]
+        tot_in = g["금일입고"].sum()
+        tot_auto = g["생산출고(자동)"].sum()
+        tot_man = g["수기출고"].sum()
+        tot_adj = g["재고조정"].sum()
+        safe_st = g["안전재고"].iloc[-1]
+        
+        summary_rows.append({
+            "품목명": itm,
+            "단위": u,
+            "시작 기초재고": init_st,
+            "기간 총입고": tot_in,
+            "생산출고(자동)": tot_auto,
+            "수기출고": tot_man,
+            "재고조정(순변동)": tot_adj,
+            "최종 기말재고": end_st,
+            "안전재고": safe_st
+        })
+    
+    df_sum_table = pd.DataFrame(summary_rows)
+    st.dataframe(
+        df_sum_table.style.format({
+            "시작 기초재고": "{:,d}", "기간 총입고": "{:,d}", "생산출고(자동)": "{:,d}",
+            "수기출고": "{:,d}", "재고조정(순변동)": "{:+,d}", "최종 기말재고": "{:,d}", "안전재고": "{:,d}"
+        }),
+        use_container_width=True
+    )
 
 def load_master_data():
     """기초정보(거래처, 부재료, 부자재) 동적 데이터 로드"""
@@ -669,7 +738,8 @@ with tab5:
     df_raw_calc = pd.DataFrame(raw_subul)
     
     col_raw1, col_raw2, col_raw3 = st.columns([2, 1, 1])
-    with col_raw1: selected_raw_item = st.selectbox("조회할 품목", ["전체 품목 보기"] + RAW_MATERIALS, key="s_raw_item")
+    with col_raw1: 
+        selected_raw_item = st.selectbox("조회할 품목", ["전체 품목 보기"] + RAW_MATERIALS, key="s_raw_item")
     
     if selected_raw_item != "전체 품목 보기":
         df_raw_calc = df_raw_calc[df_raw_calc["품목명"] == selected_raw_item]
@@ -678,19 +748,25 @@ with tab5:
 
     df_raw_calc = df_raw_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
+    # 💡 [정렬 개선] 라벨 높이만큼 상단 여백을 주어 셀렉트박스와 수평 일직선 정렬
     with col_raw2: 
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
             df_raw_calc, 
             title=f"원재료 일자별 수불부 ({raw_start_d} ~ {raw_end_d})", 
             filename_prefix=f"원재료수불부_{selected_raw_item}"
         )
     with col_raw3:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         st.download_button(label="📥 CSV 다운로드", data=to_csv(df_raw_calc), file_name=f"원재료_{raw_start_d}_{raw_end_d}.csv", mime="text/csv", use_container_width=True)
 
     st.dataframe(
         df_raw_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
         use_container_width=True
     )
+    
+    # 💡 하단 총 정리 요약부 출력
+    render_subul_summary(df_raw_calc)
 
 # ---------------------------------------------------------
 # TAB 6: 부재료 수불부
@@ -766,7 +842,8 @@ with tab6:
     df_sub_calc = pd.DataFrame(sub_subul)
 
     col_sub1, col_sub2, col_sub3 = st.columns([2, 1, 1])
-    with col_sub1: selected_sub_item = st.selectbox("조회할 품목", ["전체 품목 보기"] + DYNAMIC_SUB_MATERIALS, key="s_sub_item")
+    with col_sub1: 
+        selected_sub_item = st.selectbox("조회할 품목", ["전체 품목 보기"] + DYNAMIC_SUB_MATERIALS, key="s_sub_item")
     
     if selected_sub_item != "전체 품목 보기":
         df_sub_calc = df_sub_calc[df_sub_calc["품목명"] == selected_sub_item]
@@ -775,19 +852,25 @@ with tab6:
 
     df_sub_calc = df_sub_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
+    # 💡 [정렬 개선] 라벨 높이만큼 상단 여백을 주어 셀렉트박스와 수평 일직선 정렬
     with col_sub2:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
             df_sub_calc, 
             title=f"부재료 일자별 수불부 ({sub_start_d} ~ {sub_end_d})", 
             filename_prefix=f"부재료수불부_{selected_sub_item}"
         )
     with col_sub3:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         st.download_button(label="📥 CSV 다운로드", data=to_csv(df_sub_calc), file_name=f"부재료_{sub_start_d}_{sub_end_d}.csv", mime="text/csv", use_container_width=True)
 
     st.dataframe(
         df_sub_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
         use_container_width=True
     )
+    
+    # 💡 하단 총 정리 요약부 출력
+    render_subul_summary(df_sub_calc)
 
 # ---------------------------------------------------------
 # TAB 7: 부자재 수불부
@@ -883,7 +966,8 @@ with tab7:
     df_pkg_calc = pd.DataFrame(pkg_subul)
 
     col_pkg1, col_pkg2, col_pkg3 = st.columns([2, 1, 1])
-    with col_pkg1: selected_pkg_item = st.selectbox("조회할 품목", ["전체 품목 보기"] + DYNAMIC_PKG_MATERIALS, key="s_pkg_item")
+    with col_pkg1: 
+        selected_pkg_item = st.selectbox("조회할 품목", ["전체 품목 보기"] + DYNAMIC_PKG_MATERIALS, key="s_pkg_item")
     
     if selected_pkg_item != "전체 품목 보기":
         df_pkg_calc = df_pkg_calc[df_pkg_calc["품목명"] == selected_pkg_item]
@@ -892,19 +976,25 @@ with tab7:
 
     df_pkg_calc = df_pkg_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
+    # 💡 [정렬 개선] 라벨 높이만큼 상단 여백을 주어 셀렉트박스와 수평 일직선 정렬
     with col_pkg2:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
             df_pkg_calc, 
             title=f"부자재 일자별 수불부 ({pkg_start_d} ~ {pkg_end_d})", 
             filename_prefix=f"부자재수불부_{selected_pkg_item}"
         )
     with col_pkg3:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         st.download_button(label="📥 CSV 다운로드", data=to_csv(df_pkg_calc), file_name=f"부자재_{pkg_start_d}_{pkg_end_d}.csv", mime="text/csv", use_container_width=True)
 
     st.dataframe(
         df_pkg_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
         use_container_width=True
     )
+    
+    # 💡 하단 총 정리 요약부 출력
+    render_subul_summary(df_pkg_calc)
 
 # ---------------------------------------------------------
 # TAB 8: 거래처별 입고 현황
