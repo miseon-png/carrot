@@ -11,20 +11,6 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="당근라페 원부자재 수불부", layout="wide")
 st.title("🥕 당근라페 원재료 / 부재료 / 부자재 수불")
 
-# 인쇄/PDF 출력용 커스텀 CSS
-st.markdown("""
-    <style>
-    @media print {
-        header, footer, [data-testid="stSidebar"], .stButton, div[data-testid="stToolbar"] {
-            display: none !important;
-        }
-        .main .block-container {
-            padding: 0 !important;
-        }
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 SPREADSHEET_ID = "1vfDcssJtoq79GGirW4aBcpXN-0_NjhVOkJbG-I609PY"
 
 @st.cache_resource
@@ -129,11 +115,135 @@ def get_converted_in_qty(df_in_filtered):
                 total_qty += in_qty
     return total_qty
 
+# ---------------------------------------------------------
+# 🌟 거래명세서 방식의 새 창 팝업 인쇄 / PDF 저장 전용 함수
+# ---------------------------------------------------------
+def print_subul_html_button(df, title, filename_prefix="수불부"):
+    if df.empty:
+        st.warning("인쇄할 데이터가 없습니다.")
+        return
+
+    df_formatted = df.copy()
+    format_cols = ["전일이월", "금일입고", "생산출고(자동)", "수기출고", "재고조정", "당일재고", "안전재고"]
+    for col in format_cols:
+        if col in df_formatted.columns:
+            df_formatted[col] = df_formatted[col].apply(lambda x: f"{int(x):,}" if pd.notnull(x) else "0")
+
+    table_html = df_formatted.to_html(index=False, classes="subul-table")
+
+    full_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>{filename_prefix}</title>
+        <style>
+            @page {{
+                size: A4 landscape;
+                margin: 10mm;
+            }}
+            body {{
+                font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+                margin: 0;
+                padding: 10px;
+                color: #000;
+                background-color: #fff;
+            }}
+            .title {{
+                text-align: center;
+                font-size: 20px;
+                font-weight: bold;
+                margin-bottom: 8px;
+                letter-spacing: 2px;
+            }}
+            .sub-info {{
+                text-align: right;
+                font-size: 11px;
+                color: #555;
+                margin-bottom: 8px;
+            }}
+            table.subul-table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 11px;
+            }}
+            table.subul-table th, table.subul-table td {{
+                border: 1px solid #333;
+                padding: 5px 6px;
+                text-align: right;
+                white-space: nowrap;
+            }}
+            table.subul-table th {{
+                background-color: #f2f2f2 !important;
+                text-align: center;
+                font-weight: bold;
+            }}
+            table.subul-table td:nth-child(1) {{ text-align: center; }}
+            table.subul-table td:nth-child(2) {{ text-align: left; }}
+            table.subul-table td:nth-child(3) {{ text-align: center; }}
+        </style>
+    </head>
+    <body>
+        <div class="title">{title}</div>
+        <div class="sub-info">출력일시: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
+        {table_html}
+    </body>
+    </html>
+    """
+
+    js_content = full_html.replace('`', '\\`').replace('${', '\\${')
+    pdf_filename = f"{filename_prefix}_{datetime.date.today().strftime('%Y%m%d')}"
+
+    btn_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <style>
+        body {{ margin: 0; padding: 0; background: transparent; }}
+        .print-btn {{
+            width: 100%;
+            height: 38px;
+            background-color: #ff4b4b;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+            transition: background-color 0.2s ease;
+        }}
+        .print-btn:hover {{ background-color: #e03e3e; }}
+    </style>
+    </head>
+    <body>
+    <script>
+    function printWindowDoc() {{
+        var pWin = window.open('', '_blank');
+        pWin.document.write(`{js_content}`);
+        pWin.document.title = "{pdf_filename}";
+        pWin.document.close();
+        pWin.focus();
+        setTimeout(function() {{
+            pWin.print();
+            pWin.close();
+        }}, 500);
+    }}
+    </script>
+    <button class="print-btn" onclick="printWindowDoc()">🖨️ 인쇄 / PDF 저장</button>
+    </body>
+    </html>
+    """
+    st.components.v1.html(btn_html, height=42)
+
 def load_master_data():
     """기초정보(거래처, 부재료, 부자재) 동적 데이터 로드"""
     df = load_data("기초정보")
-    added_subs = []  # 부재료 (드레싱 등)
-    added_pkgs = []  # 부자재 (포장재 등)
+    added_subs = []
+    added_pkgs = []
     added_vendors = []
     added_units = {}
     
@@ -167,12 +277,10 @@ RAW_MATERIALS = [
     "후추(오뚜기)"
 ]
 
-# ✅ 부재료 (드레싱 등)
 BASE_SUB_MATERIALS = [
     "오리엔탈 드레싱 25g"
 ]
 
-# ✅ 부자재 (포장 용품 등)
 BASE_PKG_MATERIALS = [
     "당근200트레이",
     "당근200탑실링지",
@@ -206,7 +314,6 @@ ITEM_PACKAGE_SIZES = {
 
 BASE_VENDORS = ["케이앤에스", "은성특수산업", "제이원글로벌", "삼보판지", "기타 / 직접입력"]
 
-# 📌 동적 데이터 적용 (중복 제거 유지)
 added_subs, added_pkgs, added_vendors, added_units = load_master_data()
 DYNAMIC_SUB_MATERIALS = list(dict.fromkeys(BASE_SUB_MATERIALS + added_subs))
 DYNAMIC_PKG_MATERIALS = list(dict.fromkeys(BASE_PKG_MATERIALS + added_pkgs))
@@ -215,7 +322,7 @@ ITEM_UNITS = BASE_ITEM_UNITS.copy()
 ITEM_UNITS.update(added_units)
 
 # ---------------------------------------------------------
-# 2. 탭 구성 (총 9개로 분리)
+# 2. 탭 구성 (총 9개)
 # ---------------------------------------------------------
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "📦 입고 등록", 
@@ -381,7 +488,6 @@ with tab3:
     
     col_out1, col_out2 = st.columns(2)
     with col_out1:
-        # 모든 항목 통합해서 선택 가능하게 구성
         all_items = RAW_MATERIALS + DYNAMIC_SUB_MATERIALS + DYNAMIC_PKG_MATERIALS
         target_item_out = st.selectbox("출고 품목 선택", all_items, key="out_item") 
         out_reason = st.selectbox("출고 목적", ["제품 제조 사용", "샘플/테스트 출고", "이벤트/증정용 사용", "발주서 판매 출고", "기타 수기 출고"])
@@ -564,17 +670,23 @@ with tab5:
     
     col_raw1, col_raw2, col_raw3 = st.columns([2, 1, 1])
     with col_raw1: selected_raw_item = st.selectbox("조회할 품목", ["전체 품목 보기"] + RAW_MATERIALS, key="s_raw_item")
-    with col_raw2: 
-        if st.button("🖨️ 인쇄/PDF", key="p_raw", use_container_width=True): st.components.v1.html("<script>window.print();</script>", height=0)
-    with col_raw3:
-        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_raw_calc), file_name=f"원재료_{raw_start_d}_{raw_end_d}.csv", mime="text/csv", use_container_width=True)
-
+    
     if selected_raw_item != "전체 품목 보기":
         df_raw_calc = df_raw_calc[df_raw_calc["품목명"] == selected_raw_item]
     if raw_hide_no_change:
         df_raw_calc = df_raw_calc[(df_raw_calc["금일입고"] != 0) | (df_raw_calc["생산출고(자동)"] != 0) | (df_raw_calc["수기출고"] != 0) | (df_raw_calc["재고조정"] != 0)]
 
     df_raw_calc = df_raw_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
+
+    with col_raw2: 
+        print_subul_html_button(
+            df_raw_calc, 
+            title=f"원재료 일자별 수불부 ({raw_start_d} ~ {raw_end_d})", 
+            filename_prefix=f"원재료수불부_{selected_raw_item}"
+        )
+    with col_raw3:
+        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_raw_calc), file_name=f"원재료_{raw_start_d}_{raw_end_d}.csv", mime="text/csv", use_container_width=True)
+
     st.dataframe(
         df_raw_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
         use_container_width=True
@@ -655,17 +767,23 @@ with tab6:
 
     col_sub1, col_sub2, col_sub3 = st.columns([2, 1, 1])
     with col_sub1: selected_sub_item = st.selectbox("조회할 품목", ["전체 품목 보기"] + DYNAMIC_SUB_MATERIALS, key="s_sub_item")
-    with col_sub2:
-        if st.button("🖨️ 인쇄/PDF", key="print_sub", use_container_width=True): st.components.v1.html("<script>window.print();</script>", height=0)
-    with col_sub3:
-        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_sub_calc), file_name=f"부재료_{sub_start_d}_{sub_end_d}.csv", mime="text/csv", use_container_width=True)
-
+    
     if selected_sub_item != "전체 품목 보기":
         df_sub_calc = df_sub_calc[df_sub_calc["품목명"] == selected_sub_item]
     if sub_hide_no_change:
         df_sub_calc = df_sub_calc[(df_sub_calc["금일입고"] != 0) | (df_sub_calc["수기출고"] != 0) | (df_sub_calc["재고조정"] != 0)]
 
     df_sub_calc = df_sub_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
+
+    with col_sub2:
+        print_subul_html_button(
+            df_sub_calc, 
+            title=f"부재료 일자별 수불부 ({sub_start_d} ~ {sub_end_d})", 
+            filename_prefix=f"부재료수불부_{selected_sub_item}"
+        )
+    with col_sub3:
+        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_sub_calc), file_name=f"부재료_{sub_start_d}_{sub_end_d}.csv", mime="text/csv", use_container_width=True)
+
     st.dataframe(
         df_sub_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
         use_container_width=True
@@ -766,17 +884,23 @@ with tab7:
 
     col_pkg1, col_pkg2, col_pkg3 = st.columns([2, 1, 1])
     with col_pkg1: selected_pkg_item = st.selectbox("조회할 품목", ["전체 품목 보기"] + DYNAMIC_PKG_MATERIALS, key="s_pkg_item")
-    with col_pkg2:
-        if st.button("🖨️ 인쇄/PDF", key="print_pkg", use_container_width=True): st.components.v1.html("<script>window.print();</script>", height=0)
-    with col_pkg3:
-        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_pkg_calc), file_name=f"부자재_{pkg_start_d}_{pkg_end_d}.csv", mime="text/csv", use_container_width=True)
-
+    
     if selected_pkg_item != "전체 품목 보기":
         df_pkg_calc = df_pkg_calc[df_pkg_calc["품목명"] == selected_pkg_item]
     if pkg_hide_no_change:
         df_pkg_calc = df_pkg_calc[(df_pkg_calc["금일입고"] != 0) | (df_pkg_calc["생산출고(자동)"] != 0) | (df_pkg_calc["수기출고"] != 0) | (df_pkg_calc["재고조정"] != 0)]
 
     df_pkg_calc = df_pkg_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
+
+    with col_pkg2:
+        print_subul_html_button(
+            df_pkg_calc, 
+            title=f"부자재 일자별 수불부 ({pkg_start_d} ~ {pkg_end_d})", 
+            filename_prefix=f"부자재수불부_{selected_pkg_item}"
+        )
+    with col_pkg3:
+        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_pkg_calc), file_name=f"부자재_{pkg_start_d}_{pkg_end_d}.csv", mime="text/csv", use_container_width=True)
+
     st.dataframe(
         df_pkg_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
         use_container_width=True
