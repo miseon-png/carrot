@@ -116,50 +116,81 @@ def get_converted_in_qty(df_in_filtered):
     return total_qty
 
 # ---------------------------------------------------------
-# 🌟 인쇄 / PDF 저장 전용 함수 (출력 문서 하단에 총 정리 요약 자동 포함)
+# 🌟 [보고서 양식 완벽 구현] 새 창 팝업 인쇄 / PDF 저장 전용 함수
 # ---------------------------------------------------------
-def print_subul_html_button(df, title, filename_prefix="수불부"):
+def print_subul_html_button(df, report_title, start_d, end_d, filename_prefix="수불정산보고서"):
     if df.empty:
         st.warning("인쇄할 데이터가 없습니다.")
         return
 
-    # 1. 일자별 상세 내역 포맷팅
-    df_formatted = df.copy()
+    # 1. 일자별 수불 상세 내역 테이블 생성
+    df_detail = df.copy()
     format_cols = ["전일이월", "금일입고", "생산출고(자동)", "수기출고", "재고조정", "당일재고", "안전재고"]
     for col in format_cols:
-        if col in df_formatted.columns:
-            df_formatted[col] = df_formatted[col].apply(lambda x: f"{int(x):,}" if pd.notnull(x) else "0")
+        if col in df_detail.columns:
+            df_detail[col] = df_detail[col].apply(lambda x: f"{int(x):,}" if pd.notnull(x) else "0")
 
-    table_html = df_formatted.to_html(index=False, classes="subul-table")
+    # 컬럼 헤더 명칭 통일 및 정돈
+    rename_cols = {
+        "일자": "일자",
+        "품목명": "원료/품목명",
+        "단위": "단위",
+        "전일이월": "전일재고",
+        "금일입고": "입고",
+        "생산출고(자동)": "생산사용",
+        "수기출고": "수기출고",
+        "재고조정": "로스/조정",
+        "당일재고": "당일재고",
+        "안전재고": "안전재고"
+    }
+    df_detail = df_detail.rename(columns=rename_cols)
+    detail_table_html = df_detail.to_html(index=False, classes="report-table")
 
-    # 2. 💡 출력 문서 하단에 첨부할 [기간 총 정리 요약표] 자동 계산
+    # 2. 품목별 수불 집계 요약표 계산
     summary_rows = []
+    tot_init_all = 0
+    tot_in_all = 0
+    tot_out_all = 0
+    tot_adj_all = 0
+    tot_end_all = 0
+    
+    # 단일 단위 여부 확인 (총량 합산 표시용)
+    unique_units = df["단위"].unique()
+    main_unit = unique_units[0] if len(unique_units) == 1 else "합계"
+
     for itm, g in df.groupby("품목명", sort=False):
         g_sorted = g.sort_values(by="일자")
-        init_st = g_sorted["전일이월"].iloc[0]
-        end_st = g_sorted["당일재고"].iloc[-1]
+        init_st = int(g_sorted["전일이월"].iloc[0])
+        end_st = int(g_sorted["당일재고"].iloc[-1])
         u = g["단위"].iloc[0]
-        tot_in = g["금일입고"].sum()
-        tot_auto = g["생산출고(자동)"].sum()
-        tot_man = g["수기출고"].sum()
-        tot_adj = g["재고조정"].sum()
-        safe_st = g["안전재고"].iloc[-1]
-        
+        tot_in = int(g["금일입고"].sum())
+        tot_auto = int(g["생산출고(자동)"].sum())
+        tot_man = int(g["수기출고"].sum())
+        tot_adj = int(g["재고조정"].sum())
+        tot_out = tot_auto + tot_man
+
+        tot_init_all += init_st
+        tot_in_all += tot_in
+        tot_out_all += tot_out
+        tot_adj_all += tot_adj
+        tot_end_all += end_st
+
         summary_rows.append({
-            "품목명": itm,
+            "원료/품목명": itm,
             "단위": u,
-            "시작 기초재고": f"{int(init_st):,}",
-            "기간 총입고": f"{int(tot_in):,}",
-            "생산출고(자동)": f"{int(tot_auto):,}",
-            "수기출고": f"{int(tot_man):,}",
-            "재고조정(순변동)": f"{int(tot_adj):+,}",
-            "최종 기말재고": f"{int(end_st):,}",
-            "안전재고": f"{int(safe_st):,}"
+            "전일재고(기초)": f"{init_st:,}",
+            "기간 입고": f"{tot_in:,}",
+            "기간 사용(출고)": f"{tot_out:,}",
+            "로스/조정": f"{tot_adj:+,}",
+            "당일재고(기말)": f"{end_st:,}"
         })
     df_summary = pd.DataFrame(summary_rows)
-    summary_table_html = df_summary.to_html(index=False, classes="subul-summary-table")
+    summary_table_html = df_summary.to_html(index=False, classes="report-table summary-table")
 
-    # 3. 전체 인쇄 HTML 조립 (상세 내역 + 하단 종합 요약)
+    # 단위 표기
+    unit_label = f" ({main_unit})" if len(unique_units) == 1 else ""
+
+    # 3. 정산 보고서 전용 A4 Landscape HTML 템플릿
     full_html = f"""
     <!DOCTYPE html>
     <html>
@@ -169,75 +200,142 @@ def print_subul_html_button(df, title, filename_prefix="수불부"):
         <style>
             @page {{
                 size: A4 landscape;
-                margin: 10mm;
+                margin: 12mm 10mm;
             }}
             body {{
                 font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
                 margin: 0;
                 padding: 10px;
-                color: #000;
+                color: #222;
                 background-color: #fff;
             }}
-            .title {{
-                text-align: center;
-                font-size: 20px;
-                font-weight: bold;
-                margin-bottom: 6px;
-                letter-spacing: 2px;
+            .report-header {{
+                margin-bottom: 15px;
             }}
-            .sub-info {{
-                text-align: right;
-                font-size: 11px;
-                color: #555;
+            .report-title {{
+                font-size: 22px;
+                font-weight: bold;
+                color: #1a365d;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 6px;
+            }}
+            .report-period-bar {{
+                display: flex;
+                justify-content: space-between;
+                font-size: 13px;
+                font-weight: 600;
+                color: #4a5568;
+                padding-bottom: 8px;
+                border-bottom: 2px solid #2b6cb0;
+            }}
+            .section-title {{
+                font-size: 13px;
+                font-weight: bold;
+                color: #2d3748;
+                margin-top: 18px;
                 margin-bottom: 8px;
             }}
-            table.subul-table, table.subul-summary-table {{
+            
+            /* 깔끔한 보고서 테이블 스타일 */
+            table.report-table {{
                 width: 100%;
                 border-collapse: collapse;
                 font-size: 11px;
-                margin-bottom: 16px;
+                margin-bottom: 12px;
+                border: 1px solid #cbd5e0;
             }}
-            table.subul-table th, table.subul-table td,
-            table.subul-summary-table th, table.subul-summary-table td {{
-                border: 1px solid #333;
+            table.report-table th, table.report-table td {{
+                border: 1px solid #e2e8f0;
                 padding: 5px 6px;
                 text-align: right;
                 white-space: nowrap;
             }}
-            table.subul-table th, table.subul-summary-table th {{
-                background-color: #f2f2f2 !important;
+            table.report-table th {{
+                background-color: #edf2f7 !important;
+                color: #2d3748;
                 text-align: center;
                 font-weight: bold;
+                border-bottom: 2px solid #cbd5e0;
             }}
-            table.subul-table td:nth-child(1) {{ text-align: center; }}
-            table.subul-table td:nth-child(2) {{ text-align: left; }}
-            table.subul-table td:nth-child(3) {{ text-align: center; }}
+            table.report-table td:nth-child(1) {{ text-align: center; }}
+            table.report-table td:nth-child(2) {{ text-align: left; font-weight: 500; }}
+            table.report-table td:nth-child(3) {{ text-align: center; }}
             
-            table.subul-summary-table td:nth-child(1) {{ text-align: left; }}
-            table.subul-summary-table td:nth-child(2) {{ text-align: center; }}
+            /* 요약 테이블 전용 정렬 */
+            table.summary-table td:nth-child(1) {{ text-align: left; font-weight: bold; }}
+            table.summary-table td:nth-child(2) {{ text-align: center; }}
 
-            .summary-title {{
-                font-size: 13px;
+            /* 3. 하단 카드형 총량 집계 요약 박스 */
+            .total-card-container {{
+                display: flex;
+                justify-content: space-between;
+                gap: 12px;
+                margin-top: 10px;
+                margin-bottom: 15px;
+            }}
+            .total-card {{
+                flex: 1;
+                border: 1px solid #cbd5e0;
+                border-radius: 6px;
+                padding: 10px 14px;
+                text-align: center;
+                background-color: #f7fafc;
+            }}
+            .total-card-label {{
+                font-size: 11px;
+                color: #718096;
+                margin-bottom: 4px;
+                font-weight: 500;
+            }}
+            .total-card-val {{
+                font-size: 16px;
                 font-weight: bold;
-                margin-top: 15px;
-                margin-bottom: 6px;
-                color: #111;
+                color: #1a202c;
             }}
         </style>
     </head>
     <body>
-        <div class="title">{title}</div>
-        <div class="sub-info">출력일시: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
-        {table_html}
-        
-        <div class="summary-title">📌 [수불 기간 종합 요약 및 정산]</div>
+        <div class="report-header">
+            <div class="report-title">{report_title}</div>
+            <div class="report-period-bar">
+                <span>정산 기간: {start_d} ~ {end_d}</span>
+                <span style="font-size: 11px; color:#718096; font-weight:normal;">출력일시: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
+            </div>
+        </div>
+
+        <div class="section-title">1. 일자별 상세 수불 내역</div>
+        {detail_table_html}
+
+        <div class="section-title">2. 품목별 수불 집계 요약표</div>
         {summary_table_html}
+
+        <div class="section-title">3. 정산 기간 총량 집계 요약</div>
+        <div class="total-card-container">
+            <div class="total-card">
+                <div class="total-card-label">기준일 이월재고 (정산시작 전일)</div>
+                <div class="total-card-val">{tot_init_all:,}{unit_label}</div>
+            </div>
+            <div class="total-card">
+                <div class="total-card-label">총 입고량</div>
+                <div class="total-card-val" style="color: #2b6cb0;">{tot_in_all:,}{unit_label}</div>
+            </div>
+            <div class="total-card">
+                <div class="total-card-label">총 출고/사용량</div>
+                <div class="total-card-val" style="color: #c53030;">{tot_out_all:,}{unit_label}</div>
+            </div>
+            <div class="total-card">
+                <div class="total-card-label">정산 기말재고 (정산종료일)</div>
+                <div class="total-card-val" style="color: #2f855a;">{tot_end_all:,}{unit_label}</div>
+            </div>
+        </div>
     </body>
     </html>
     """
 
     js_content = full_html.replace('`', '\\`').replace('${', '\\${')
-    pdf_filename = f"{filename_prefix}_{datetime.date.today().strftime('%Y%m%d')}"
+    pdf_filename = f"{filename_prefix}_{start_d}_to_{end_d}"
 
     btn_html = f"""
     <!DOCTYPE html>
@@ -725,13 +823,15 @@ with tab5:
 
     df_raw_calc = df_raw_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
-    # 💡 [정렬 맞춤] 셀렉트박스와 수평 일직선 정렬
+    # 💡 [정렬 맞춤 및 보고서 타이틀 적용]
     with col_raw2: 
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
             df_raw_calc, 
-            title=f"원재료 일자별 수불부 ({raw_start_d} ~ {raw_end_d})", 
-            filename_prefix=f"원재료수불부_{selected_raw_item}"
+            report_title="📊 야채 원재료 수불 정산 보고서", 
+            start_d=str(raw_start_d),
+            end_d=str(raw_end_d),
+            filename_prefix=f"원재료수불보고서_{selected_raw_item}"
         )
     with col_raw3:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
@@ -826,13 +926,15 @@ with tab6:
 
     df_sub_calc = df_sub_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
-    # 💡 [정렬 맞춤] 셀렉트박스와 수평 일직선 정렬
+    # 💡 [정렬 맞춤 및 보고서 타이틀 적용]
     with col_sub2:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
             df_sub_calc, 
-            title=f"부재료 일자별 수불부 ({sub_start_d} ~ {sub_end_d})", 
-            filename_prefix=f"부재료수불부_{selected_sub_item}"
+            report_title="🍶 부재료 수불 정산 보고서", 
+            start_d=str(sub_start_d),
+            end_d=str(sub_end_d),
+            filename_prefix=f"부재료수불보고서_{selected_sub_item}"
         )
     with col_sub3:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
@@ -947,13 +1049,15 @@ with tab7:
 
     df_pkg_calc = df_pkg_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
-    # 💡 [정렬 맞춤] 셀렉트박스와 수평 일직선 정렬
+    # 💡 [정렬 맞춤 및 보고서 타이틀 적용]
     with col_pkg2:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
             df_pkg_calc, 
-            title=f"부자재 일자별 수불부 ({pkg_start_d} ~ {pkg_end_d})", 
-            filename_prefix=f"부자재수불부_{selected_pkg_item}"
+            report_title="📦 부자재 수불 정산 보고서", 
+            start_d=str(pkg_start_d),
+            end_d=str(pkg_end_d),
+            filename_prefix=f"부자재수불보고서_{selected_pkg_item}"
         )
     with col_pkg3:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
