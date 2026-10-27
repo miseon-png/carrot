@@ -116,9 +116,9 @@ def get_converted_in_qty(df_in_filtered):
     return total_qty
 
 # ---------------------------------------------------------
-# 🌟 [보고서 양식 완벽 구현] 새 창 팝업 인쇄 / PDF 저장 전용 함수
+# 🌟 [당근라페 수불 정산 보고서] 새 창 팝업 인쇄 / PDF 저장 전용 함수
 # ---------------------------------------------------------
-def print_subul_html_button(df, report_title, start_d, end_d, filename_prefix="수불정산보고서"):
+def print_subul_html_button(df, report_title, start_d, end_d, filename_prefix="당근라페_수불정산보고서"):
     if df.empty:
         st.warning("인쇄할 데이터가 없습니다.")
         return
@@ -130,7 +130,6 @@ def print_subul_html_button(df, report_title, start_d, end_d, filename_prefix="�
         if col in df_detail.columns:
             df_detail[col] = df_detail[col].apply(lambda x: f"{int(x):,}" if pd.notnull(x) else "0")
 
-    # 컬럼 헤더 명칭 통일 및 정돈
     rename_cols = {
         "일자": "일자",
         "품목명": "원료/품목명",
@@ -154,7 +153,6 @@ def print_subul_html_button(df, report_title, start_d, end_d, filename_prefix="�
     tot_adj_all = 0
     tot_end_all = 0
     
-    # 단일 단위 여부 확인 (총량 합산 표시용)
     unique_units = df["단위"].unique()
     main_unit = unique_units[0] if len(unique_units) == 1 else "합계"
 
@@ -187,7 +185,6 @@ def print_subul_html_button(df, report_title, start_d, end_d, filename_prefix="�
     df_summary = pd.DataFrame(summary_rows)
     summary_table_html = df_summary.to_html(index=False, classes="report-table summary-table")
 
-    # 단위 표기
     unit_label = f" ({main_unit})" if len(unique_units) == 1 else ""
 
     # 3. 정산 보고서 전용 A4 Landscape HTML 템플릿
@@ -238,7 +235,6 @@ def print_subul_html_button(df, report_title, start_d, end_d, filename_prefix="�
                 margin-bottom: 8px;
             }}
             
-            /* 깔끔한 보고서 테이블 스타일 */
             table.report-table {{
                 width: 100%;
                 border-collapse: collapse;
@@ -263,11 +259,9 @@ def print_subul_html_button(df, report_title, start_d, end_d, filename_prefix="�
             table.report-table td:nth-child(2) {{ text-align: left; font-weight: 500; }}
             table.report-table td:nth-child(3) {{ text-align: center; }}
             
-            /* 요약 테이블 전용 정렬 */
             table.summary-table td:nth-child(1) {{ text-align: left; font-weight: bold; }}
             table.summary-table td:nth-child(2) {{ text-align: center; }}
 
-            /* 3. 하단 카드형 총량 집계 요약 박스 */
             .total-card-container {{
                 display: flex;
                 justify-content: space-between;
@@ -717,11 +711,11 @@ out_item_col = get_item_col(df_out)
 adj_item_col = get_item_col(df_adj)
 
 # ---------------------------------------------------------
-# TAB 5: 원재료 수불부
+# TAB 5: 당근라페 원재료 수불부
 # ---------------------------------------------------------
 with tab5:
-    st.subheader("📊 원재료 일자별 수불부")
-    st.info("💡 소금, 오일, 머스타드 등 당근라페 배합에 들어가는 재료입니다.")
+    st.subheader("📊 당근라페 원재료 일자별 수불부")
+    st.info("💡 소금, 오일, 머스타드 등 당근라페 배합에 들어가는 원재료입니다.")
     
     today = datetime.date.today()
     first_day = today.replace(day=1)
@@ -823,19 +817,19 @@ with tab5:
 
     df_raw_calc = df_raw_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
-    # 💡 [정렬 맞춤 및 보고서 타이틀 적용]
+    # 💡 [당근라페 원재료 수불 정산 보고서 타이틀 적용]
     with col_raw2: 
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
             df_raw_calc, 
-            report_title="📊 야채 원재료 수불 정산 보고서", 
+            report_title="🥕 당근라페 원재료 수불 정산 보고서", 
             start_d=str(raw_start_d),
             end_d=str(raw_end_d),
-            filename_prefix=f"원재료수불보고서_{selected_raw_item}"
+            filename_prefix=f"당근라페_원재료수불보고서_{selected_raw_item}"
         )
     with col_raw3:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_raw_calc), file_name=f"원재료_{raw_start_d}_{raw_end_d}.csv", mime="text/csv", use_container_width=True)
+        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_raw_calc), file_name=f"당근라페_원재료_{raw_start_d}_{raw_end_d}.csv", mime="text/csv", use_container_width=True)
 
     st.dataframe(
         df_raw_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
@@ -843,10 +837,10 @@ with tab5:
     )
 
 # ---------------------------------------------------------
-# TAB 6: 부재료 수불부
+# TAB 6: 당근라페 부재료 수불부
 # ---------------------------------------------------------
 with tab6:
-    st.subheader("🍶 부재료 일자별 수불부")
+    st.subheader("🍶 당근라페 부재료 일자별 수불부")
     st.info("💡 드레싱 등 별도로 동봉되는 부재료 품목입니다.")
     
     col_sub_sd1, col_sub_sd2, col_sub_sd3 = st.columns([1, 1, 1])
@@ -926,19 +920,19 @@ with tab6:
 
     df_sub_calc = df_sub_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
-    # 💡 [정렬 맞춤 및 보고서 타이틀 적용]
+    # 💡 [당근라페 부재료 수불 정산 보고서 타이틀 적용]
     with col_sub2:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
             df_sub_calc, 
-            report_title="🍶 부재료 수불 정산 보고서", 
+            report_title="🍶 당근라페 부재료 수불 정산 보고서", 
             start_d=str(sub_start_d),
             end_d=str(sub_end_d),
-            filename_prefix=f"부재료수불보고서_{selected_sub_item}"
+            filename_prefix=f"당근라페_부재료수불보고서_{selected_sub_item}"
         )
     with col_sub3:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_sub_calc), file_name=f"부재료_{sub_start_d}_{sub_end_d}.csv", mime="text/csv", use_container_width=True)
+        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_sub_calc), file_name=f"당근라페_부재료_{sub_start_d}_{sub_end_d}.csv", mime="text/csv", use_container_width=True)
 
     st.dataframe(
         df_sub_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
@@ -946,10 +940,10 @@ with tab6:
     )
 
 # ---------------------------------------------------------
-# TAB 7: 부자재 수불부
+# TAB 7: 당근라페 부자재 수불부
 # ---------------------------------------------------------
 with tab7:
-    st.subheader("📦 부자재 일자별 수불부")
+    st.subheader("📦 당근라페 부자재 일자별 수불부")
     st.info("💡 트레이, 실링지, 박스 등 포장 및 용기류 품목입니다.")
     
     col_pkg_sd1, col_pkg_sd2, col_pkg_sd3 = st.columns([1, 1, 1])
@@ -1049,19 +1043,19 @@ with tab7:
 
     df_pkg_calc = df_pkg_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
-    # 💡 [정렬 맞춤 및 보고서 타이틀 적용]
+    # 💡 [당근라페 부자재 수불 정산 보고서 타이틀 적용]
     with col_pkg2:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
             df_pkg_calc, 
-            report_title="📦 부자재 수불 정산 보고서", 
+            report_title="📦 당근라페 부자재 수불 정산 보고서", 
             start_d=str(pkg_start_d),
             end_d=str(pkg_end_d),
-            filename_prefix=f"부자재수불보고서_{selected_pkg_item}"
+            filename_prefix=f"당근라페_부자재수불보고서_{selected_pkg_item}"
         )
     with col_pkg3:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_pkg_calc), file_name=f"부자재_{pkg_start_d}_{pkg_end_d}.csv", mime="text/csv", use_container_width=True)
+        st.download_button(label="📥 CSV 다운로드", data=to_csv(df_pkg_calc), file_name=f"당근라페_부자재_{pkg_start_d}_{pkg_end_d}.csv", mime="text/csv", use_container_width=True)
 
     st.dataframe(
         df_pkg_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
