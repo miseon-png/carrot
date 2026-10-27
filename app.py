@@ -116,13 +116,14 @@ def get_converted_in_qty(df_in_filtered):
     return total_qty
 
 # ---------------------------------------------------------
-# 🌟 거래명세서 방식의 새 창 팝업 인쇄 / PDF 저장 전용 함수
+# 🌟 인쇄 / PDF 저장 전용 함수 (출력 문서 하단에 총 정리 요약 자동 포함)
 # ---------------------------------------------------------
 def print_subul_html_button(df, title, filename_prefix="수불부"):
     if df.empty:
         st.warning("인쇄할 데이터가 없습니다.")
         return
 
+    # 1. 일자별 상세 내역 포맷팅
     df_formatted = df.copy()
     format_cols = ["전일이월", "금일입고", "생산출고(자동)", "수기출고", "재고조정", "당일재고", "안전재고"]
     for col in format_cols:
@@ -131,6 +132,34 @@ def print_subul_html_button(df, title, filename_prefix="수불부"):
 
     table_html = df_formatted.to_html(index=False, classes="subul-table")
 
+    # 2. 💡 출력 문서 하단에 첨부할 [기간 총 정리 요약표] 자동 계산
+    summary_rows = []
+    for itm, g in df.groupby("품목명", sort=False):
+        g_sorted = g.sort_values(by="일자")
+        init_st = g_sorted["전일이월"].iloc[0]
+        end_st = g_sorted["당일재고"].iloc[-1]
+        u = g["단위"].iloc[0]
+        tot_in = g["금일입고"].sum()
+        tot_auto = g["생산출고(자동)"].sum()
+        tot_man = g["수기출고"].sum()
+        tot_adj = g["재고조정"].sum()
+        safe_st = g["안전재고"].iloc[-1]
+        
+        summary_rows.append({
+            "품목명": itm,
+            "단위": u,
+            "시작 기초재고": f"{int(init_st):,}",
+            "기간 총입고": f"{int(tot_in):,}",
+            "생산출고(자동)": f"{int(tot_auto):,}",
+            "수기출고": f"{int(tot_man):,}",
+            "재고조정(순변동)": f"{int(tot_adj):+,}",
+            "최종 기말재고": f"{int(end_st):,}",
+            "안전재고": f"{int(safe_st):,}"
+        })
+    df_summary = pd.DataFrame(summary_rows)
+    summary_table_html = df_summary.to_html(index=False, classes="subul-summary-table")
+
+    # 3. 전체 인쇄 HTML 조립 (상세 내역 + 하단 종합 요약)
     full_html = f"""
     <!DOCTYPE html>
     <html>
@@ -153,7 +182,7 @@ def print_subul_html_button(df, title, filename_prefix="수불부"):
                 text-align: center;
                 font-size: 20px;
                 font-weight: bold;
-                margin-bottom: 8px;
+                margin-bottom: 6px;
                 letter-spacing: 2px;
             }}
             .sub-info {{
@@ -162,18 +191,20 @@ def print_subul_html_button(df, title, filename_prefix="수불부"):
                 color: #555;
                 margin-bottom: 8px;
             }}
-            table.subul-table {{
+            table.subul-table, table.subul-summary-table {{
                 width: 100%;
                 border-collapse: collapse;
                 font-size: 11px;
+                margin-bottom: 16px;
             }}
-            table.subul-table th, table.subul-table td {{
+            table.subul-table th, table.subul-table td,
+            table.subul-summary-table th, table.subul-summary-table td {{
                 border: 1px solid #333;
                 padding: 5px 6px;
                 text-align: right;
                 white-space: nowrap;
             }}
-            table.subul-table th {{
+            table.subul-table th, table.subul-summary-table th {{
                 background-color: #f2f2f2 !important;
                 text-align: center;
                 font-weight: bold;
@@ -181,12 +212,26 @@ def print_subul_html_button(df, title, filename_prefix="수불부"):
             table.subul-table td:nth-child(1) {{ text-align: center; }}
             table.subul-table td:nth-child(2) {{ text-align: left; }}
             table.subul-table td:nth-child(3) {{ text-align: center; }}
+            
+            table.subul-summary-table td:nth-child(1) {{ text-align: left; }}
+            table.subul-summary-table td:nth-child(2) {{ text-align: center; }}
+
+            .summary-title {{
+                font-size: 13px;
+                font-weight: bold;
+                margin-top: 15px;
+                margin-bottom: 6px;
+                color: #111;
+            }}
         </style>
     </head>
     <body>
         <div class="title">{title}</div>
         <div class="sub-info">출력일시: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
         {table_html}
+        
+        <div class="summary-title">📌 [수불 기간 종합 요약 및 정산]</div>
+        {summary_table_html}
     </body>
     </html>
     """
@@ -239,74 +284,6 @@ def print_subul_html_button(df, title, filename_prefix="수불부"):
     </html>
     """
     st.components.v1.html(btn_html, height=44)
-
-# ---------------------------------------------------------
-# 🌟 수불부 하단 총 정리 집계 카드 및 요약표 렌더링 함수
-# ---------------------------------------------------------
-def render_subul_summary(df_calc):
-    if df_calc.empty:
-        return
-    
-    st.markdown("---")
-    st.markdown("### 📌 수불 기간 총 정리 요약")
-    
-    # 1. 단일 품목 조회 시: 직관적인 Metric 카드 출력
-    items_in_df = df_calc["품목명"].unique()
-    if len(items_in_df) == 1:
-        single_item = items_in_df[0]
-        u = df_calc["단위"].iloc[0]
-        
-        # 첫날 전일이월 및 마지막날 당일재고 추출
-        df_sorted = df_calc.sort_values(by="일자")
-        start_stock = df_sorted["전일이월"].iloc[0]
-        final_stock = df_sorted["당일재고"].iloc[-1]
-        
-        sum_in = df_calc["금일입고"].sum()
-        sum_auto = df_calc["생산출고(자동)"].sum()
-        sum_manual = df_calc["수기출고"].sum()
-        sum_adj = df_calc["재고조정"].sum()
-        safe = df_calc["안전재고"].iloc[-1]
-        
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("시작 기초재고", f"{start_stock:,} {u}")
-        c2.metric("총 입고량", f"{sum_in:,} {u}")
-        c3.metric("총 출고량(자동+수기)", f"{(sum_auto + sum_manual):,} {u}", delta=f"-{(sum_auto + sum_manual):,}")
-        c4.metric("재고조정 순합계", f"{sum_adj:+,} {u}")
-        c5.metric("최종 기말재고", f"{final_stock:,} {u}", delta=f"안전재고: {safe:,} {u}")
-    
-    # 2. 전체 품목 or 공통: 품목별 집계 요약표
-    summary_rows = []
-    for itm, g in df_calc.groupby("품목명", sort=False):
-        g_sorted = g.sort_values(by="일자")
-        init_st = g_sorted["전일이월"].iloc[0]
-        end_st = g_sorted["당일재고"].iloc[-1]
-        u = g["단위"].iloc[0]
-        tot_in = g["금일입고"].sum()
-        tot_auto = g["생산출고(자동)"].sum()
-        tot_man = g["수기출고"].sum()
-        tot_adj = g["재고조정"].sum()
-        safe_st = g["안전재고"].iloc[-1]
-        
-        summary_rows.append({
-            "품목명": itm,
-            "단위": u,
-            "시작 기초재고": init_st,
-            "기간 총입고": tot_in,
-            "생산출고(자동)": tot_auto,
-            "수기출고": tot_man,
-            "재고조정(순변동)": tot_adj,
-            "최종 기말재고": end_st,
-            "안전재고": safe_st
-        })
-    
-    df_sum_table = pd.DataFrame(summary_rows)
-    st.dataframe(
-        df_sum_table.style.format({
-            "시작 기초재고": "{:,d}", "기간 총입고": "{:,d}", "생산출고(자동)": "{:,d}",
-            "수기출고": "{:,d}", "재고조정(순변동)": "{:+,d}", "최종 기말재고": "{:,d}", "안전재고": "{:,d}"
-        }),
-        use_container_width=True
-    )
 
 def load_master_data():
     """기초정보(거래처, 부재료, 부자재) 동적 데이터 로드"""
@@ -748,7 +725,7 @@ with tab5:
 
     df_raw_calc = df_raw_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
-    # 💡 [정렬 개선] 라벨 높이만큼 상단 여백을 주어 셀렉트박스와 수평 일직선 정렬
+    # 💡 [정렬 맞춤] 셀렉트박스와 수평 일직선 정렬
     with col_raw2: 
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
@@ -764,9 +741,6 @@ with tab5:
         df_raw_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
         use_container_width=True
     )
-    
-    # 💡 하단 총 정리 요약부 출력
-    render_subul_summary(df_raw_calc)
 
 # ---------------------------------------------------------
 # TAB 6: 부재료 수불부
@@ -852,7 +826,7 @@ with tab6:
 
     df_sub_calc = df_sub_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
-    # 💡 [정렬 개선] 라벨 높이만큼 상단 여백을 주어 셀렉트박스와 수평 일직선 정렬
+    # 💡 [정렬 맞춤] 셀렉트박스와 수평 일직선 정렬
     with col_sub2:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
@@ -868,9 +842,6 @@ with tab6:
         df_sub_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
         use_container_width=True
     )
-    
-    # 💡 하단 총 정리 요약부 출력
-    render_subul_summary(df_sub_calc)
 
 # ---------------------------------------------------------
 # TAB 7: 부자재 수불부
@@ -976,7 +947,7 @@ with tab7:
 
     df_pkg_calc = df_pkg_calc.sort_values(by=["일자", "품목명"]).reset_index(drop=True)
 
-    # 💡 [정렬 개선] 라벨 높이만큼 상단 여백을 주어 셀렉트박스와 수평 일직선 정렬
+    # 💡 [정렬 맞춤] 셀렉트박스와 수평 일직선 정렬
     with col_pkg2:
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
         print_subul_html_button(
@@ -992,9 +963,6 @@ with tab7:
         df_pkg_calc.style.format({"전일이월": "{:,d}", "금일입고": "{:,d}", "생산출고(자동)": "{:,d}", "수기출고": "{:,d}", "재고조정": "{:,d}", "당일재고": "{:,d}", "안전재고": "{:,d}"}),
         use_container_width=True
     )
-    
-    # 💡 하단 총 정리 요약부 출력
-    render_subul_summary(df_pkg_calc)
 
 # ---------------------------------------------------------
 # TAB 8: 거래처별 입고 현황
